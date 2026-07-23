@@ -192,12 +192,10 @@ function render(){
   items.forEach(it=>{
     const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'');
     const pxW=it.w*scale, pxH=it.d*scale;
-    if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB'),ink=cssv('--ink');
+    if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
-        '<rect x="0" y="0" width="7" height="100" fill="'+sb+'"/>'+
-        '<path d="M3.5 100 A96.5 96.5 0 0 1 100 3.5" fill="none" stroke="'+sb+'" stroke-width="2.5"/>'+
-        '<line x1="3.5" y1="0" x2="100" y2="0" stroke="'+cssv('--sub')+'" stroke-width="2"/>'+
-        '<text x="60" y="58" font-size="17" font-weight="700" fill="'+ink+'" text-anchor="middle" transform="scale('+(it.flip?-1:1)+',1)'+(it.flip?' translate(-100,0)':'')+'">門'+it.w+'</text></svg>';
+        '<path d="M2.5 100 A97.5 97.5 0 0 1 100 2.5" fill="none" stroke="'+sb+'" stroke-width="1.8"/>'+
+        '<rect x="0.5" y="0" width="5" height="100" fill="'+cssv('--card')+'" stroke="'+sb+'" stroke-width="1.8"/></svg>';
     } else {
       if(!it.wall){ const cc=CAT[it.c]||CAT.shelf; d.style.background=cc[0]; d.style.borderColor=cc[1]; }
       const nf=fontFor(it,pxW,pxH), df=Math.max(6,nf*0.66);
