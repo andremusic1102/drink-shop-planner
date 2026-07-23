@@ -54,6 +54,8 @@
   .it.wallit{background:var(--wall)!important;border:1px solid var(--wall)!important;color:var(--card)}
   .it.door{background:transparent!important;border:none!important;overflow:visible;z-index:12}
   .it.door svg{width:100%;height:100%;overflow:visible}
+  .it.win{background:transparent!important;border:none!important;overflow:visible;z-index:11}
+  .it.win svg{width:100%;height:100%;overflow:visible}
   .gap{position:absolute;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--sel);color:var(--sel);
     font-family:var(--mono);font-size:10px;font-weight:700;line-height:1.3;padding:1px 4px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:8}
   .gapln{position:absolute;pointer-events:none;z-index:7}
@@ -88,10 +90,12 @@
       <span class="hint">1300×375cm · 格線每50cm · 拖拉移動 · 點選可旋轉/複製/刪除/改尺寸</span></div>
     <div class="bar">
       <button class="p" id="addDoor">＋ 門</button>
+      <button id="addWin">＋ 窗戶</button>
       <button id="addWall">＋ 隔間牆</button>
       <button id="addObj">＋ 自訂物件</button>
       <button id="dup">⧉ 複製</button>
       <button id="rot">⟳ 旋轉90°</button>
+      <button id="flip">⇄ 翻面</button>
       <button class="warn" id="del">🗑 刪除</button>
       <label class="tgl"><input type="checkbox" id="snap" checked> 貼齊(緊貼歸零)</label>
       <label class="tgl"><input type="checkbox" id="gaps" checked> 顯示間距</label>
@@ -192,12 +196,16 @@ function render(){
   SHELL.forEach(s=>{ const d=document.createElement('div'); d.className='fx'+(s.stairs?' stairs':'');
     place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+s.name+'</span>'; plan.appendChild(d); });
   items.forEach(it=>{
-    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'');
+    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'');
     const pxW=it.w*scale, pxH=it.d*scale;
     if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
         '<path d="M0 100 A100 100 0 0 1 100 0" fill="none" stroke="'+sb+'" stroke-width="1.6" vector-effect="non-scaling-stroke"/>'+
         '<rect x="94" y="0" width="6" height="100" fill="'+cssv('--card')+'" stroke="'+sb+'" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>';
+    } else if(it.win){ d.style.transform='rotate('+(it.rot||0)+'deg)'; const wb=cssv('--coldB');
+      d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
+        '<rect x="0" y="0" width="100" height="100" fill="'+cssv('--card')+'" stroke="'+wb+'" stroke-width="1.5" vector-effect="non-scaling-stroke"/>'+
+        '<line x1="0" y1="50" x2="100" y2="50" stroke="'+wb+'" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>';
     } else {
       if(!it.wall){ const cc=CAT[it.c]||CAT.shelf; d.style.background=cc[0]; d.style.borderColor=cc[1]; }
       const tall=pxH>pxW*1.3, L=tall?pxH:pxW, S=tall?pxW:pxH;
@@ -215,13 +223,13 @@ function render(){
 }
 function place(el,x,y,w,d){ el.style.left=x*scale+'px'; el.style.top=y*scale+'px'; el.style.width=w*scale+'px'; el.style.height=d*scale+'px'; }
 function skip(a){ return a.door; }
-function overlaps(a){ if(a.door||a.wall)return false; return items.some(b=>b!==a && !b.door && !b.wall && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
+function overlaps(a){ if(a.door||a.wall||a.win)return false; return items.some(b=>b!==a && !b.door && !b.wall && !b.win && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
 function clampPos(it,x,y){ if(it.door) return [x,y]; return [Math.max(0,Math.min(PLAN_W-it.w,x)),Math.max(0,Math.min(PLAN_H-it.d,y))]; }
 
 function snapPos(it,nx,ny){ let sx=nx,sy=ny;
   if(Math.abs(nx)<SNAP)sx=0; if(Math.abs(nx+it.w-PLAN_W)<SNAP)sx=PLAN_W-it.w;
   if(Math.abs(ny)<SNAP)sy=0; if(Math.abs(ny+it.d-PLAN_H)<SNAP)sy=PLAN_H-it.d;
-  items.forEach(o=>{ if(o===it||o.door)return;
+  items.forEach(o=>{ if(o===it||o.door||o.win)return;
     const vOv=ny<o.y+o.d&&o.y<ny+it.d, hOv=nx<o.x+o.w&&o.x<nx+it.w;
     if(vOv){ if(Math.abs(nx+it.w-o.x)<SNAP)sx=o.x-it.w; else if(Math.abs(nx-(o.x+o.w))<SNAP)sx=o.x+o.w;
       if(Math.abs(nx-o.x)<SNAP)sx=o.x; else if(Math.abs(nx+it.w-(o.x+o.w))<SNAP)sx=o.x+o.w-it.w; }
@@ -232,12 +240,12 @@ function snapPos(it,nx,ny){ let sx=nx,sy=ny;
 
 function renderGaps(){ [...plan.querySelectorAll('.gap,.gapln')].forEach(e=>e.remove());
   const g=$('#gaps'); if(!g||!g.checked) return;
-  items.forEach(a=>{ if(a.door)return; let best=null,bg=1e9;
-    items.forEach(b=>{ if(b===a||b.door||b.x<a.x+a.w-0.5)return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
+  items.forEach(a=>{ if(a.door||a.win)return; let best=null,bg=1e9;
+    items.forEach(b=>{ if(b===a||b.door||b.win||b.x<a.x+a.w-0.5)return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
       const gg=b.x-(a.x+a.w); if(gg>=1&&gg<bg){bg=gg;best=b;} });
     if(best){ const y=(Math.max(a.y,best.y)+Math.min(a.y+a.d,best.y+best.d))/2; addGapH(a.x+a.w,best.x,y,bg); } });
-  items.forEach(a=>{ if(a.door)return; let best=null,bg=1e9;
-    items.forEach(b=>{ if(b===a||b.door||b.y<a.y+a.d-0.5)return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
+  items.forEach(a=>{ if(a.door||a.win)return; let best=null,bg=1e9;
+    items.forEach(b=>{ if(b===a||b.door||b.win||b.y<a.y+a.d-0.5)return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
       const gg=b.y-(a.y+a.d); if(gg>=1&&gg<bg){bg=gg;best=b;} });
     if(best){ const x=(Math.max(a.x,best.x)+Math.min(a.x+a.w,best.x+best.w))/2; addGapV(x,a.y+a.d,best.y,bg); } });
 }
@@ -281,6 +289,10 @@ function updateSel(){ const it=items.find(i=>i.id===sel);
       '<div class="kv" style="color:var(--sub)">⟳旋轉換牆邊·可拖到圖外(外開)</div>';
     const dw=$('#dw'); if(dw)dw.onchange=()=>{const v=Math.max(20,+dw.value||100); it.w=it.d=v; save(); render();};
     const df=$('#dflip'); if(df)df.onclick=()=>{it.flip=!it.flip; save(); render();}; return; }
+  if(it.win){ $('#selBody').innerHTML='<div class="kv"><b>窗戶</b></div>'+
+      '<div class="kv">窗寬 <input id="ww" type="number" min="20" step="5" value="'+it.w+'"> · 厚 <input id="wt2" type="number" min="4" step="1" value="'+it.d+'"> cm</div>'+
+      '<div class="kv" style="color:var(--sub)">⟳旋轉貼直牆·拖到牆邊會吸附</div>';
+    const ww=$('#ww'),wt2=$('#wt2'); if(ww)ww.onchange=()=>{it.w=Math.max(20,+ww.value||120);save();render();}; if(wt2)wt2.onchange=()=>{it.d=Math.max(4,+wt2.value||16);save();render();}; return; }
   if(it.wall){ $('#selBody').innerHTML='<div class="kv"><b>隔間牆</b></div>'+
       '<div class="kv">長 <input id="wl" type="number" min="10" step="5" value="'+it.w+'"> · 厚 <input id="wt" type="number" min="4" step="1" value="'+it.d+'"> cm</div>'+
       '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>';
@@ -291,8 +303,8 @@ function updateSel(){ const it=items.find(i=>i.id===sel);
     '<div class="kv">距牆 左'+Math.round(it.x)+' 右'+Math.round(PLAN_W-it.x-it.w)+' 上'+Math.round(it.y)+' 下'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':''); }
 function buildList(){ const wrap=$('#list'); wrap.innerHTML='<h2>清單（點一下跳到）</h2>';
-  items.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(CAT[it.c]||CAT.shelf); const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':'');
-    c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span>'+(it.door?'門 '+it.w:it.n)+
+  items.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(it.win?['var(--cold)','var(--coldB)']:(CAT[it.c]||CAT.shelf)); const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':'');
+    c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span>'+(it.door?'門 '+it.w:(it.win?'窗 '+it.w:it.n))+
       ' <span style="margin-left:auto;color:var(--sub);font-family:var(--mono);font-size:11px">'+it.w+'×'+it.d+'</span>';
     c.onclick=()=>{sel=it.id;render();stage.scrollTo({left:(it.x+MARGIN)*scale-120,top:(it.y+MARGIN)*scale-80,behavior:'smooth'});}; wrap.appendChild(c); }); }
 
@@ -300,6 +312,10 @@ $('#addDoor').onclick=()=>{ const w=Math.max(20,+prompt('門寬(cm)＝開門半�
   items.push({id:uid++,n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true,flip:false}); sel=uid-1; save(); render(); };
 $('#addWall').onclick=()=>{ const L=Math.max(20,+prompt('隔間牆長度(cm)：','200')||200);
   items.push({id:uid++,n:'隔間牆',c:'wall',w:L,d:10,x:80,y:80,h:0,rot:0,wall:true}); sel=uid-1; save(); render(); };
+$('#addWin').onclick=()=>{ const w=Math.max(20,+prompt('窗寬(cm)：','120')||120);
+  items.push({id:uid++,n:'窗戶',c:'win',w:w,d:16,x:200,y:0,h:0,rot:0,win:true}); sel=uid-1; save(); render(); };
+function flip(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return; it.flip=!it.flip; save(); render(); }
+$('#flip').onclick=flip;
 const od=$('#objDlg'); $('#addObj').onclick=()=>od.showModal(); $('#oCancel').onclick=()=>od.close();
 $('#oOk').onclick=()=>{ const n=$('#oName').value.trim()||'物件',w=+$('#oW').value||60,d=+$('#oD').value||60;
   items.push({id:uid++,n,c:'shelf',w,d,x:40,y:40,h:0,rot:0,door:false}); sel=uid-1; od.close(); save(); render(); };
