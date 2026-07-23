@@ -35,7 +35,7 @@
   main{flex:1;display:flex;min-height:0}
   .stage{flex:1;overflow:auto;padding:16px}
   .planwrap{position:relative;margin:0 auto}
-  .plan{position:relative;background:var(--card);border:3px solid var(--wall);box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  .plan{position:absolute;background:var(--card);border:3px solid var(--wall);box-shadow:0 2px 10px rgba(0,0,0,.12)}
   .grid{position:absolute;inset:0;pointer-events:none;
     background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);}
   .fx{position:absolute;pointer-events:none;display:flex;align-items:center;justify-content:center;text-align:center;
@@ -43,13 +43,14 @@
   .fx.stairs{background:repeating-linear-gradient(90deg,var(--shell),var(--shell) 5px,var(--shellB) 5px,var(--shellB) 5.6px)}
   .it{position:absolute;border:1.5px solid var(--counterB);background:var(--counter);border-radius:3px;cursor:grab;
     display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;
-    touch-action:none;user-select:none;padding:1px}
+    touch-action:none;user-select:none;padding:1px;line-height:1.05}
   .it:active{cursor:grabbing}
-  .it .nm{font-size:12px;font-weight:700;line-height:1.1}
-  .it .dm{font-size:10px;font-family:var(--mono);opacity:.85;line-height:1.05}
+  .it .nm{font-weight:700;line-height:1.08;word-break:break-word}
+  .it .dm{font-family:var(--mono);opacity:.85;line-height:1.05}
   .it.sel{outline:2.5px solid var(--sel);outline-offset:1px;z-index:20}
   .it.bad{border-color:var(--sel)!important}
-  .it.door{background:transparent!important;border:none!important;overflow:visible}
+  .it.wallit{background:var(--wall)!important;border:1px solid var(--wall)!important;color:var(--card)}
+  .it.door{background:transparent!important;border:none!important;overflow:visible;z-index:6}
   .it.door svg{width:100%;height:100%;overflow:visible}
   .gap{position:absolute;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--sel);color:var(--sel);
     font-family:var(--mono);font-size:10px;font-weight:700;line-height:1.3;padding:1px 4px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:15}
@@ -60,9 +61,9 @@
   .sel-info h2{font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--sub);margin:0 0 8px}
   .kv{font-size:13px;margin:4px 0;font-family:var(--mono)}
   .kv b{font-family:var(--sans)}
-  .kv input{width:62px;padding:2px 5px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:13px}
-  .rowbtn{display:flex;gap:6px;margin-top:8px}
-  .rowbtn button{flex:1;justify-content:center;font-size:12px;padding:6px}
+  .kv input{width:60px;padding:2px 5px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:13px}
+  .rowbtn{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .rowbtn button{flex:1;justify-content:center;font-size:12px;padding:6px;min-width:64px}
   .list{flex:1;overflow:auto;padding:8px 10px}
   .list h2{font-size:11px;font-family:var(--mono);text-transform:uppercase;color:var(--sub);margin:6px 2px}
   .chip{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12.5px}
@@ -82,10 +83,12 @@
 <div class="app">
   <header>
     <div class="titl"><h1>飲料店一樓 · 互動平面編輯器</h1>
-      <span class="hint">1300×375cm · 格線每50cm · 拖拉移動 · 點選可旋轉/刪除/改尺寸</span></div>
+      <span class="hint">1300×375cm · 格線每50cm · 拖拉移動 · 點選可旋轉/複製/刪除/改尺寸</span></div>
     <div class="bar">
       <button class="p" id="addDoor">＋ 門</button>
+      <button id="addWall">＋ 隔間牆</button>
       <button id="addObj">＋ 自訂物件</button>
+      <button id="dup">⧉ 複製</button>
       <button id="rot">⟳ 旋轉90°</button>
       <button class="warn" id="del">🗑 刪除</button>
       <label class="tgl"><input type="checkbox" id="snap" checked> 貼齊(緊貼歸零)</label>
@@ -106,7 +109,7 @@
         <h2>目前選取</h2>
         <div id="selBody" class="kv" style="color:var(--sub)">點一個方塊來看尺寸／移動它</div>
         <div class="rowbtn" id="selBtns" style="display:none">
-          <button id="rot2">⟳ 旋轉</button><button class="warn" id="del2">刪除</button></div>
+          <button id="rot2">⟳ 旋轉</button><button id="dup2">⧉ 複製</button><button class="warn" id="del2">刪除</button></div>
       </div>
       <div class="list" id="list"></div>
       <div class="foot" id="foot"></div>
@@ -131,7 +134,7 @@
 </dialog>
 
 <script>
-const PLAN_W=1300, PLAN_H=375, SNAP=8;
+const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140;
 const CAT={counter:['var(--counter)','var(--counterB)'],cold:['var(--cold)','var(--coldB)'],water:['var(--water)','var(--waterB)'],
   heat:['var(--heat)','var(--heatB)'],seal:['var(--seal)','var(--sealB)'],shrine:['var(--shrine)','var(--shrineB)'],shelf:['var(--shelf)','var(--shelfB)']};
 const SHELL=[
@@ -173,24 +176,34 @@ function reset(){ items=DEFAULT.map(o=>({...o,id:uid++,rot:0,door:false})); sel=
 function save(){ localStorage.setItem('drinkshop_v1',JSON.stringify(items)); }
 
 function fit(){ const availW=stage.clientWidth-32; scale=(availW/PLAN_W)*parseFloat($('#zoom').value);
-  const W=PLAN_W*scale,H=PLAN_H*scale;
-  planwrap.style.width=W+'px'; planwrap.style.height=H+'px'; plan.style.width=W+'px'; plan.style.height=H+'px';
+  const M=MARGIN*scale, W=PLAN_W*scale, H=PLAN_H*scale;
+  planwrap.style.width=(W+2*M)+'px'; planwrap.style.height=(H+2*M)+'px';
+  plan.style.left=M+'px'; plan.style.top=M+'px'; plan.style.width=W+'px'; plan.style.height=H+'px';
   $('#gridEl').style.backgroundSize=(50*scale)+'px '+(50*scale)+'px'; render(); }
+
+function fontFor(it,pxW,pxH){ const nlen=Math.max(1,[...(it.n||'')].length);
+  const rows=nlen<=3?1:2, cpr=Math.ceil(nlen/rows);
+  let nf=Math.min(pxW*0.9/cpr, pxH*0.82/(rows+0.9)); nf=Math.max(7,Math.min(nf,46)); return nf; }
 
 function render(){
   [...plan.querySelectorAll('.it,.fx,.gap,.gapln')].forEach(e=>e.remove());
   SHELL.forEach(s=>{ const d=document.createElement('div'); d.className='fx'+(s.stairs?' stairs':'');
     place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+s.name+'</span>'; plan.appendChild(d); });
   items.forEach(it=>{
-    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(sel===it.id?' sel':'');
-    if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg)'; const ink=cssv('--ink'),sb=cssv('--sealB');
+    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'');
+    const pxW=it.w*scale, pxH=it.d*scale;
+    if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB'),ink=cssv('--ink');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
         '<rect x="0" y="0" width="7" height="100" fill="'+sb+'"/>'+
         '<path d="M3.5 100 A96.5 96.5 0 0 1 100 3.5" fill="none" stroke="'+sb+'" stroke-width="2.5"/>'+
         '<line x1="3.5" y1="0" x2="100" y2="0" stroke="'+cssv('--sub')+'" stroke-width="2"/>'+
-        '<text x="58" y="56" font-size="17" font-weight="700" fill="'+ink+'" text-anchor="middle">門'+it.w+'</text></svg>';
-    } else { const cc=CAT[it.c]||CAT.shelf; d.style.background=cc[0]; d.style.borderColor=cc[1];
-      d.innerHTML='<span class="nm">'+it.n+'</span><span class="dm">'+it.w+'×'+it.d+(it.h?'×'+it.h:'')+'</span>'; }
+        '<text x="60" y="58" font-size="17" font-weight="700" fill="'+ink+'" text-anchor="middle" transform="scale('+(it.flip?-1:1)+',1)'+(it.flip?' translate(-100,0)':'')+'">門'+it.w+'</text></svg>';
+    } else {
+      if(!it.wall){ const cc=CAT[it.c]||CAT.shelf; d.style.background=cc[0]; d.style.borderColor=cc[1]; }
+      const nf=fontFor(it,pxW,pxH), df=Math.max(6,nf*0.66);
+      d.innerHTML='<span class="nm" style="font-size:'+nf.toFixed(1)+'px">'+it.n+'</span>'+
+        '<span class="dm" style="font-size:'+df.toFixed(1)+'px">'+it.w+'×'+it.d+(it.h?'×'+it.h:'')+'</span>';
+    }
     place(d,it.x,it.y,it.w,it.d);
     if(overlaps(it)) d.classList.add('bad');
     d.dataset.id=it.id; d.addEventListener('pointerdown',startDrag); plan.appendChild(d);
@@ -198,7 +211,9 @@ function render(){
   renderGaps(); buildList(); updateSel(); $('#foot').textContent='共 '+items.length+' 件';
 }
 function place(el,x,y,w,d){ el.style.left=x*scale+'px'; el.style.top=y*scale+'px'; el.style.width=w*scale+'px'; el.style.height=d*scale+'px'; }
-function overlaps(a){ if(a.door)return false; return items.some(b=>b!==a && !b.door && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
+function skip(a){ return a.door; }
+function overlaps(a){ if(a.door||a.wall)return false; return items.some(b=>b!==a && !b.door && !b.wall && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
+function clampPos(it,x,y){ if(it.door) return [x,y]; return [Math.max(0,Math.min(PLAN_W-it.w,x)),Math.max(0,Math.min(PLAN_H-it.d,y))]; }
 
 function snapPos(it,nx,ny){ let sx=nx,sy=ny;
   if(Math.abs(nx)<SNAP)sx=0; if(Math.abs(nx+it.w-PLAN_W)<SNAP)sx=PLAN_W-it.w;
@@ -239,8 +254,8 @@ function startDrag(e){ const el=e.currentTarget,id=+el.dataset.id,it=items.find(
   buildList(); updateSel(); e.preventDefault(); e.stopPropagation(); }
 function onDrag(e){ if(!drag)return; const it=drag.it;
   let nx=drag.ox+(e.clientX-drag.sx)/scale, ny=drag.oy+(e.clientY-drag.sy)/scale;
-  nx=Math.max(0,Math.min(PLAN_W-it.w,nx)); ny=Math.max(0,Math.min(PLAN_H-it.d,ny));
-  if($('#snap').checked){ [nx,ny]=snapPos(it,nx,ny); }
+  if(it.door){ /* 門可超出圖面、不吸附 */ }
+  else { [nx,ny]=clampPos(it,nx,ny); if($('#snap').checked)[nx,ny]=snapPos(it,nx,ny); }
   it.x=nx; it.y=ny; drag.el.style.left=nx*scale+'px'; drag.el.style.top=ny*scale+'px';
   drag.el.classList.toggle('bad',overlaps(it)); renderGaps(); updateSel(); }
 function endDrag(){ if(!drag)return; const el=drag.el;
@@ -248,31 +263,40 @@ function endDrag(){ if(!drag)return; const el=drag.el;
   drag=null; save(); render(); }
 
 function rotate(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
-  const cx=it.x+it.w/2,cy=it.y+it.d/2;
-  if(!it.door)[it.w,it.d]=[it.d,it.w];
-  it.rot=(it.rot+90)%360;
-  it.x=Math.max(0,Math.min(PLAN_W-it.w,cx-it.w/2)); it.y=Math.max(0,Math.min(PLAN_H-it.d,cy-it.d/2)); save(); render(); }
+  const cx=it.x+it.w/2,cy=it.y+it.d/2; if(!it.door)[it.w,it.d]=[it.d,it.w]; it.rot=((it.rot||0)+90)%360;
+  [it.x,it.y]=clampPos(it,cx-it.w/2,cy-it.d/2); save(); render(); }
+function dup(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
+  const c=JSON.parse(JSON.stringify(it)); c.id=uid++; [c.x,c.y]=clampPos(c,it.x+30,it.y+30); items.push(c); sel=c.id; save(); render(); }
 function del(){ if(sel==null)return; items=items.filter(i=>i.id!==sel); sel=null; save(); render(); }
+
 function updateSel(){ const it=items.find(i=>i.id===sel);
   if(!it){$('#selBody').innerHTML='點一個方塊來看尺寸／移動它';$('#selBody').style.color='var(--sub)';$('#selBtns').style.display='none';return;}
   $('#selBody').style.color='var(--ink)';$('#selBtns').style.display='flex';
   if(it.door){ $('#selBody').innerHTML='<div class="kv"><b>門（四分之一圓）</b></div>'+
       '<div class="kv">門寬/半徑 <input id="dw" type="number" min="20" step="5" value="'+it.w+'"> cm</div>'+
-      '<div class="kv" style="color:var(--sub)">按 ⟳ 旋轉換鉸鏈邊／開向</div>';
-    const dw=$('#dw'); if(dw)dw.onchange=()=>{const v=Math.max(20,+dw.value||100); it.w=it.d=v; save(); render();}; return; }
+      '<div class="rowbtn"><button id="dflip">翻面(換開向)</button></div>'+
+      '<div class="kv" style="color:var(--sub)">⟳旋轉換牆邊·可拖到圖外(外開)</div>';
+    const dw=$('#dw'); if(dw)dw.onchange=()=>{const v=Math.max(20,+dw.value||100); it.w=it.d=v; save(); render();};
+    const df=$('#dflip'); if(df)df.onclick=()=>{it.flip=!it.flip; save(); render();}; return; }
+  if(it.wall){ $('#selBody').innerHTML='<div class="kv"><b>隔間牆</b></div>'+
+      '<div class="kv">長 <input id="wl" type="number" min="10" step="5" value="'+it.w+'"> · 厚 <input id="wt" type="number" min="4" step="1" value="'+it.d+'"> cm</div>'+
+      '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>';
+    const wl=$('#wl'),wt=$('#wt'); if(wl)wl.onchange=()=>{it.w=Math.max(10,+wl.value||10);save();render();}; if(wt)wt.onchange=()=>{it.d=Math.max(4,+wt.value||10);save();render();}; return; }
   $('#selBody').innerHTML='<div class="kv"><b>'+it.n+'</b></div>'+
     '<div class="kv">尺寸 '+it.w+' × '+it.d+(it.h?' × '+it.h:'')+' cm</div>'+
     '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>'+
     '<div class="kv">距牆 左'+Math.round(it.x)+' 右'+Math.round(PLAN_W-it.x-it.w)+' 上'+Math.round(it.y)+' 下'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':''); }
 function buildList(){ const wrap=$('#list'); wrap.innerHTML='<h2>清單（點一下跳到）</h2>';
-  items.forEach(it=>{ const cc=CAT[it.c]||CAT.shelf; const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':'');
+  items.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(CAT[it.c]||CAT.shelf); const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':'');
     c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span>'+(it.door?'門 '+it.w:it.n)+
       ' <span style="margin-left:auto;color:var(--sub);font-family:var(--mono);font-size:11px">'+it.w+'×'+it.d+'</span>';
-    c.onclick=()=>{sel=it.id;render();stage.scrollTo({left:it.x*scale-100,top:it.y*scale-60,behavior:'smooth'});}; wrap.appendChild(c); }); }
+    c.onclick=()=>{sel=it.id;render();stage.scrollTo({left:(it.x+MARGIN)*scale-120,top:(it.y+MARGIN)*scale-80,behavior:'smooth'});}; wrap.appendChild(c); }); }
 
 $('#addDoor').onclick=()=>{ const w=Math.max(20,+prompt('門寬(cm)＝開門半徑：','100')||100);
-  items.push({id:uid++,n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true}); sel=uid-1; save(); render(); };
+  items.push({id:uid++,n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true,flip:false}); sel=uid-1; save(); render(); };
+$('#addWall').onclick=()=>{ const L=Math.max(20,+prompt('隔間牆長度(cm)：','200')||200);
+  items.push({id:uid++,n:'隔間牆',c:'wall',w:L,d:10,x:80,y:80,h:0,rot:0,wall:true}); sel=uid-1; save(); render(); };
 const od=$('#objDlg'); $('#addObj').onclick=()=>od.showModal(); $('#oCancel').onclick=()=>od.close();
 $('#oOk').onclick=()=>{ const n=$('#oName').value.trim()||'物件',w=+$('#oW').value||60,d=+$('#oD').value||60;
   items.push({id:uid++,n,c:'shelf',w,d,x:40,y:40,h:0,rot:0,door:false}); sel=uid-1; od.close(); save(); render(); };
@@ -296,10 +320,10 @@ const iod=$('#ioDlg');
 $('#io').onclick=()=>{$('#ioText').value=JSON.stringify(items);iod.showModal();}; $('#ioClose').onclick=()=>iod.close();
 $('#ioCopy').onclick=()=>{navigator.clipboard.writeText($('#ioText').value);$('#ioCopy').textContent='已複製';setTimeout(()=>$('#ioCopy').textContent='複製',1200);};
 $('#ioImport').onclick=()=>{try{const a=JSON.parse($('#ioText').value);if(Array.isArray(a)){items=a;uid=Math.max(0,...items.map(i=>i.id||0))+1;sel=null;save();render();iod.close();}}catch(e){alert('配置碼看不懂');}};
-$('#rot').onclick=rotate; $('#rot2').onclick=rotate; $('#del').onclick=del; $('#del2').onclick=del;
+$('#rot').onclick=rotate; $('#rot2').onclick=rotate; $('#dup').onclick=dup; $('#dup2').onclick=dup; $('#del').onclick=del; $('#del2').onclick=del;
 $('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉你的調整）')) reset(); };
 $('#zoom').oninput=fit; $('#gaps').onchange=renderGaps;
-document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT')return; if(e.key==='r'||e.key==='R')rotate(); if(e.key==='Delete'||e.key==='Backspace')del(); });
+document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT')return; if(e.key==='r'||e.key==='R')rotate(); if(e.key==='d'||e.key==='D')dup(); if(e.key==='Delete'||e.key==='Backspace')del(); });
 plan.addEventListener('pointerdown',e=>{ if(e.target===plan||e.target.classList.contains('grid')){sel=null;render();} });
 window.addEventListener('resize',fit);
 load(); fit();
