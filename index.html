@@ -75,6 +75,7 @@
   .chip{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12.5px}
   .chip:hover,.chip.on{background:var(--line2)}
   .sw{width:11px;height:11px;border-radius:3px;border:1px solid rgba(0,0,0,.2);flex:none}
+  .eye{border:none;background:transparent;padding:0 2px;font-size:13px;cursor:pointer;line-height:1;flex:none}
   .foot{font-size:11px;color:var(--sub);padding:6px 10px;border-top:1px solid var(--line);font-family:var(--mono)}
   dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);padding:16px;max-width:340px;width:92%}
   dialog::backdrop{background:rgba(0,0,0,.4)}
@@ -123,7 +124,7 @@
         <h2>目前選取</h2>
         <div id="selBody" class="kv" style="color:var(--sub)">點一個方塊來看尺寸／移動它</div>
         <div class="rowbtn" id="selBtns" style="display:none">
-          <button id="rot2">⟳ 旋轉</button><button id="dup2">⧉ 複製</button><button class="warn" id="del2">刪除</button></div>
+          <button id="rot2">⟳ 旋轉</button><button id="dup2">⧉ 複製</button><button id="hide2">🙈 隱藏</button><button class="warn" id="del2">刪除</button></div>
       </div>
       <div class="list" id="list"></div>
       <div class="foot" id="foot"></div>
@@ -203,7 +204,7 @@ function render(){
   [...plan.querySelectorAll('.it,.fx,.gap,.gapln,#measLayer')].forEach(e=>e.remove());
   SHELL.forEach(s=>{ const d=document.createElement('div'); d.className='fx'+(s.stairs?' stairs':'');
     place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+s.name+'</span>'; plan.appendChild(d); });
-  items.forEach(it=>{
+  items.forEach(it=>{ if(it.hidden)return;
     const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'');
     const pxW=it.w*scale, pxH=it.d*scale;
     if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
@@ -236,7 +237,7 @@ function render(){
 }
 function place(el,x,y,w,d){ el.style.left=x*scale+'px'; el.style.top=y*scale+'px'; el.style.width=w*scale+'px'; el.style.height=d*scale+'px'; }
 function skip(a){ return a.door; }
-function overlaps(a){ if(a.door||a.wall||a.win)return false; return items.some(b=>b!==a && !b.door && !b.wall && !b.win && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
+function overlaps(a){ if(a.door||a.wall||a.win||a.hidden)return false; return items.some(b=>b!==a && !b.door && !b.wall && !b.win && !b.hidden && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
 function clampPos(it,x,y){ if(it.door) return [x,y]; return [Math.max(0,Math.min(PLAN_W-it.w,x)),Math.max(0,Math.min(PLAN_H-it.d,y))]; }
 
 function snapPos(it,nx,ny){ let sx=nx,sy=ny;
@@ -253,12 +254,12 @@ function snapPos(it,nx,ny){ let sx=nx,sy=ny;
 
 function renderGaps(){ [...plan.querySelectorAll('.gap,.gapln')].forEach(e=>e.remove());
   const g=$('#gaps'); if(!g||!g.checked) return;
-  items.forEach(a=>{ if(a.door||a.win)return; let best=null,bg=1e9;
-    items.forEach(b=>{ if(b===a||b.door||b.win)return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
+  items.forEach(a=>{ if(a.door||a.win||a.hidden)return; let best=null,bg=1e9;
+    items.forEach(b=>{ if(b===a||b.door||b.win||b.hidden)return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
       const gg=b.x-(a.x+a.w); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
     if(best&&bg>=1){ const y=(Math.max(a.y,best.y)+Math.min(a.y+a.d,best.y+best.d))/2; addGapH(a.x+a.w,best.x,y,bg); } });
-  items.forEach(a=>{ if(a.door||a.win)return; let best=null,bg=1e9;
-    items.forEach(b=>{ if(b===a||b.door||b.win)return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
+  items.forEach(a=>{ if(a.door||a.win||a.hidden)return; let best=null,bg=1e9;
+    items.forEach(b=>{ if(b===a||b.door||b.win||b.hidden)return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
       const gg=b.y-(a.y+a.d); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
     if(best&&bg>=1){ const x=(Math.max(a.x,best.x)+Math.min(a.x+a.w,best.x+best.w))/2; addGapV(x,a.y+a.d,best.y,bg); } });
 }
@@ -315,11 +316,13 @@ function updateSel(){ const it=items.find(i=>i.id===sel);
     '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>'+
     '<div class="kv">距牆 左'+Math.round(it.x)+' 右'+Math.round(PLAN_W-it.x-it.w)+' 上'+Math.round(it.y)+' 下'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':''); }
-function buildList(){ const wrap=$('#list'); wrap.innerHTML='<h2>清單（點一下跳到）</h2>';
-  items.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(it.win?['var(--cold)','var(--coldB)']:(CAT[it.c]||CAT.shelf)); const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':'');
-    c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span>'+(it.door?'門 '+it.w:(it.win?'窗 '+it.w:it.n))+
-      ' <span style="margin-left:auto;color:var(--sub);font-family:var(--mono);font-size:11px">'+it.w+'×'+it.d+'</span>';
-    c.onclick=()=>{sel=it.id;render();stage.scrollTo({left:(it.x+MARGIN)*scale-120,top:(it.y+MARGIN)*scale-80,behavior:'smooth'});}; wrap.appendChild(c); }); }
+function buildList(){ const wrap=$('#list'); const nh=items.filter(i=>i.hidden).length; wrap.innerHTML='<h2>清單 · 👁隱藏/顯示'+(nh?'（'+nh+'隱藏）':'')+'</h2>';
+  items.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(it.win?['var(--cold)','var(--coldB)']:(CAT[it.c]||CAT.shelf)); const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':''); if(it.hidden)c.style.opacity='.45';
+    c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span><span>'+(it.door?'門 '+it.w:(it.win?'窗 '+it.w:it.n))+
+      '</span><span style="margin-left:auto;color:var(--sub);font-family:var(--mono);font-size:11px">'+it.w+'×'+it.d+'</span>';
+    const eye=document.createElement('button'); eye.className='eye'; eye.textContent=it.hidden?'🙈':'👁'; eye.title=it.hidden?'顯示':'隱藏';
+    eye.onclick=(ev)=>{ ev.stopPropagation(); it.hidden=!it.hidden; if(it.hidden&&sel===it.id)sel=null; save(); render(); }; c.appendChild(eye);
+    c.onclick=()=>{ it.hidden=false; sel=it.id; save(); render(); stage.scrollTo({left:(it.x+MARGIN)*scale-120,top:(it.y+MARGIN)*scale-80,behavior:'smooth'}); }; wrap.appendChild(c); }); }
 
 $('#addDoor').onclick=()=>{ const w=Math.max(20,+prompt('門寬(cm)＝開門半徑：','100')||100);
   items.push({id:uid++,n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true,flip:false}); sel=uid-1; save(); render(); };
@@ -336,7 +339,7 @@ function loadM(){ try{measures=JSON.parse(localStorage.getItem('drinkshop_meas')
 function saveM(){ localStorage.setItem('drinkshop_meas',JSON.stringify(measures)); }
 function ptPos(p){ if(!p)return [0,0]; if(p.ref!=null){ const it=items.find(i=>i.id===p.ref); if(it) return [it.x+p.cx*it.w, it.y+p.cy*it.d]; } return [p.x||0,p.y||0]; }
 function snapPoint(clx,cly){ const TH=18; let best=null,bd=TH;
-  items.forEach(it=>{ if(it.door||it.win)return; for(let cx=0;cx<=1;cx++)for(let cy=0;cy<=1;cy++){
+  items.forEach(it=>{ if(it.door||it.win||it.hidden)return; for(let cx=0;cx<=1;cx++)for(let cy=0;cy<=1;cy++){
     const gx=(it.x+cx*it.w)*scale, gy=(it.y+cy*it.d)*scale, dd=Math.hypot(gx-clx,gy-cly);
     if(dd<bd){bd=dd;best={ref:it.id,cx,cy,x:it.x+cx*it.w,y:it.y+cy*it.d};} } });
   SHELL.forEach(s=>{ for(let cx=0;cx<=1;cx++)for(let cy=0;cy<=1;cy++){
@@ -392,6 +395,7 @@ $('#io').onclick=()=>{$('#ioText').value=JSON.stringify({items:items,measures:me
 $('#ioCopy').onclick=()=>{navigator.clipboard.writeText($('#ioText').value);$('#ioCopy').textContent='已複製';setTimeout(()=>$('#ioCopy').textContent='複製',1200);};
 $('#ioImport').onclick=()=>{try{const p=JSON.parse($('#ioText').value); items=Array.isArray(p)?p:(p.items||[]); measures=Array.isArray(p)?measures:(p.measures||[]); uid=Math.max(0,...items.map(i=>i.id||0),...measures.map(m=>m.id||0))+1; sel=null; save(); saveM(); render(); iod.close();}catch(e){alert('配置碼看不懂');}};
 $('#rot').onclick=rotate; $('#rot2').onclick=rotate; $('#dup').onclick=dup; $('#dup2').onclick=dup; $('#del').onclick=del; $('#del2').onclick=del;
+$('#hide2').onclick=()=>{ if(sel==null)return; const it=items.find(i=>i.id===sel); if(it){it.hidden=true;sel=null;save();render();} };
 $('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉你的調整）')) reset(); };
 $('#zoom').oninput=fit; $('#gaps').onchange=renderGaps;
 $('#togglePanel').onclick=()=>{ const a=document.querySelector('.app'); a.classList.toggle('nopanel'); $('#togglePanel').textContent=a.classList.contains('nopanel')?'◧ 顯示清單':'◧ 隱藏清單'; setTimeout(fit,10); };
@@ -420,7 +424,7 @@ function buildSVG(){ const s=1.7, M=120;
   g+='<rect x="'+px(0)+'" y="'+px(0)+'" width="'+ln(PLAN_W)+'" height="'+ln(PLAN_H)+'" fill="none" stroke="'+ink+'" stroke-width="3"/>';
   SHELL.forEach(o=>{ g+='<rect x="'+px(o.x)+'" y="'+px(o.y)+'" width="'+ln(o.w)+'" height="'+ln(o.d)+'" fill="'+shc+'" stroke="'+line+'"/>'+
     '<text x="'+px(o.x+o.w/2)+'" y="'+px(o.y+o.d/2)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" dominant-baseline="middle" fill="'+sub+'">'+esc(o.name)+'</text>'; });
-  items.forEach(it=>{ const cxp=px(it.x+it.w/2), cyp=px(it.y+it.d/2), pw=it.w*s, pd=it.d*s;
+  items.forEach(it=>{ if(it.hidden)return; const cxp=px(it.x+it.w/2), cyp=px(it.y+it.d/2), pw=it.w*s, pd=it.d*s;
     if(it.door){ g+='<g transform="rotate('+(it.rot||0)+' '+cxp+' '+cyp+')">'+
         '<path d="M'+px(it.x)+' '+px(it.y+it.d)+' A'+ln(it.w)+' '+ln(it.d)+' 0 0 1 '+px(it.x+it.w)+' '+px(it.y)+'" fill="none" stroke="'+sealB+'" stroke-width="1.6"/>'+
         '<rect x="'+px(it.x+it.w-6)+'" y="'+px(it.y)+'" width="'+ln(6)+'" height="'+ln(it.d)+'" fill="#fff" stroke="'+sealB+'" stroke-width="1.6"/></g>';
