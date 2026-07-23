@@ -61,6 +61,7 @@
     font-family:var(--mono);font-size:10px;font-weight:700;line-height:1.3;padding:1px 4px;border-radius:6px;pointer-events:none;white-space:nowrap;z-index:8}
   .gapln{position:absolute;pointer-events:none;z-index:7}
   .panel{width:252px;flex:none;border-left:1px solid var(--line);background:var(--card);display:flex;flex-direction:column;min-height:0}
+  .app.nopanel .panel{display:none}
   @media(max-width:720px){main{flex-direction:column}.panel{width:auto;border-left:none;border-top:1px solid var(--line);max-height:36vh}}
   .sel-info{padding:12px;border-bottom:1px solid var(--line)}
   .sel-info h2{font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--sub);margin:0 0 8px}
@@ -100,10 +101,14 @@
       <button class="warn" id="del">🗑 刪除</button>
       <label class="tgl"><input type="checkbox" id="snap" checked> 貼齊(緊貼歸零)</label>
       <label class="tgl"><input type="checkbox" id="gaps" checked> 顯示間距</label>
+      <button id="togglePanel">◧ 隱藏清單</button>
       <button id="measure">📏 量距</button>
       <button id="clearM">清量距</button>
       <button id="save">💾 存檔</button>
       <button id="loadv">📂 讀取</button>
+      <button class="p" id="share">🔗 分享</button>
+      <button id="png">🖼 PNG</button>
+      <button id="pdf">🖨 PDF</button>
       <button id="io">匯出/匯入</button>
       <button class="warn" id="reset">重設</button>
       <span class="zoom">🔍 <input type="range" id="zoom" min="0.4" max="2.6" step="0.05" value="1"></span>
@@ -282,7 +287,7 @@ function endDrag(){ if(!drag)return; const el=drag.el;
   drag=null; save(); render(); }
 
 function rotate(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
-  const cx=it.x+it.w/2,cy=it.y+it.d/2; if(!it.door)[it.w,it.d]=[it.d,it.w]; it.rot=((it.rot||0)+90)%360;
+  const cx=it.x+it.w/2,cy=it.y+it.d/2; if(!it.door&&!it.win)[it.w,it.d]=[it.d,it.w]; it.rot=((it.rot||0)+90)%360;
   [it.x,it.y]=clampPos(it,cx-it.w/2,cy-it.d/2); save(); render(); }
 function dup(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
   const c=JSON.parse(JSON.stringify(it)); c.id=uid++; [c.x,c.y]=clampPos(c,it.x+30,it.y+30); items.push(c); sel=c.id; save(); render(); }
@@ -376,9 +381,11 @@ function renderSaves(){ const s=getSaves(),w=$('#svList'),names=Object.keys(s);
     const sp=document.createElement('span'); sp.textContent=n; row.appendChild(sp);
     const b1=document.createElement('button'); b1.textContent='讀取'; b1.className='p';
     b1.onclick=()=>{const dd=s[n]; if(Array.isArray(dd)){items=JSON.parse(JSON.stringify(dd));measures=[];}else{items=JSON.parse(JSON.stringify(dd.items||[]));measures=JSON.parse(JSON.stringify(dd.measures||[]));} uid=Math.max(0,...items.map(i=>i.id||0),...measures.map(m=>m.id||0))+1;sel=null;save();saveM();render();svDlg.close();};
+    const b3=document.createElement('button'); b3.textContent='分享'; b3.className='p';
+    b3.onclick=()=>{ const dd=s[n]; const o=Array.isArray(dd)?{items:dd,measures:[]}:{items:dd.items||[],measures:dd.measures||[]}; doShare(o,n); };
     const b2=document.createElement('button'); b2.textContent='刪除'; b2.className='warn';
     b2.onclick=()=>{const ss=getSaves();delete ss[n];localStorage.setItem(SK,JSON.stringify(ss));renderSaves();};
-    row.appendChild(b1);row.appendChild(b2);w.appendChild(row); }); }
+    row.appendChild(b1);row.appendChild(b3);row.appendChild(b2);w.appendChild(row); }); }
 
 const iod=$('#ioDlg');
 $('#io').onclick=()=>{$('#ioText').value=JSON.stringify({items:items,measures:measures});iod.showModal();}; $('#ioClose').onclick=()=>iod.close();
@@ -387,8 +394,58 @@ $('#ioImport').onclick=()=>{try{const p=JSON.parse($('#ioText').value); items=Ar
 $('#rot').onclick=rotate; $('#rot2').onclick=rotate; $('#dup').onclick=dup; $('#dup2').onclick=dup; $('#del').onclick=del; $('#del2').onclick=del;
 $('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉你的調整）')) reset(); };
 $('#zoom').oninput=fit; $('#gaps').onchange=renderGaps;
+$('#togglePanel').onclick=()=>{ const a=document.querySelector('.app'); a.classList.toggle('nopanel'); $('#togglePanel').textContent=a.classList.contains('nopanel')?'◧ 顯示清單':'◧ 隱藏清單'; setTimeout(fit,10); };
 document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT')return; if(e.key==='r'||e.key==='R')rotate(); if(e.key==='d'||e.key==='D')dup(); if(e.key==='Delete'||e.key==='Backspace')del(); });
 plan.addEventListener('pointerdown',e=>{ if(measuring){ handleMeasureClick(e); return; } if(e.target===plan||e.target.classList.contains('grid')){sel=null;render();} });
+// ===== 分享（網址編碼）與匯出 =====
+function encData(o){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))); }
+function decData(s){ return JSON.parse(decodeURIComponent(escape(atob(s)))); }
+function shareLinkFor(o){ return location.origin+location.pathname+'#v='+encData(o); }
+function doShare(o,name){ const link=shareLinkFor(o);
+  if(navigator.clipboard) navigator.clipboard.writeText(link).catch(()=>{});
+  if(navigator.share){ navigator.share({title:'飲料店平面'+(name?'·'+name:''),url:link}).catch(()=>{}); return; }
+  prompt('分享連結'+(name?'（'+name+'）':'')+'（已複製，貼給家人用手機打開就能看）：', link); }
+$('#share').onclick=()=>doShare({items,measures});
+function loadFromHash(){ if(location.hash.indexOf('#v=')===0){ try{ const o=decData(location.hash.slice(3));
+  if(o&&o.items){ items=o.items; measures=o.measures||[]; uid=Math.max(0,...items.map(i=>i.id||0),...measures.map(m=>m.id||0))+1; save(); saveM(); return true; } }catch(e){} } return false; }
+
+function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function buildSVG(){ const s=1.7, M=120;
+  const px=v=>((v+M)*s).toFixed(1), ln=v=>(v*s).toFixed(1);
+  const W=Math.round((PLAN_W+2*M)*s), H=Math.round((PLAN_H+2*M)*s);
+  const ink=cssv('--wall'),sub=cssv('--sub'),line=cssv('--line'),acc=cssv('--accent'),shc=cssv('--shell'),sealB=cssv('--sealB'),coldB=cssv('--coldB');
+  const P={counter:[cssv('--counter'),cssv('--counterB')],cold:[cssv('--cold'),cssv('--coldB')],water:[cssv('--water'),cssv('--waterB')],heat:[cssv('--heat'),cssv('--heatB')],seal:[cssv('--seal'),cssv('--sealB')],shrine:[cssv('--shrine'),cssv('--shrineB')],shelf:[cssv('--shelf'),cssv('--shelfB')]};
+  let g='<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><rect width="'+W+'" height="'+H+'" fill="#ffffff"/>';
+  g+='<text x="'+(W/2)+'" y="'+Math.round(22*s)+'" font-family="sans-serif" font-size="'+Math.round(11*s)+'" text-anchor="middle" fill="#111">飲料店一樓平面配置 · 1300×375cm</text>';
+  g+='<rect x="'+px(0)+'" y="'+px(0)+'" width="'+ln(PLAN_W)+'" height="'+ln(PLAN_H)+'" fill="none" stroke="'+ink+'" stroke-width="3"/>';
+  SHELL.forEach(o=>{ g+='<rect x="'+px(o.x)+'" y="'+px(o.y)+'" width="'+ln(o.w)+'" height="'+ln(o.d)+'" fill="'+shc+'" stroke="'+line+'"/>'+
+    '<text x="'+px(o.x+o.w/2)+'" y="'+px(o.y+o.d/2)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" dominant-baseline="middle" fill="'+sub+'">'+esc(o.name)+'</text>'; });
+  items.forEach(it=>{ const cxp=px(it.x+it.w/2), cyp=px(it.y+it.d/2), pw=it.w*s, pd=it.d*s;
+    if(it.door){ g+='<g transform="rotate('+(it.rot||0)+' '+cxp+' '+cyp+')">'+
+        '<path d="M'+px(it.x)+' '+px(it.y+it.d)+' A'+ln(it.w)+' '+ln(it.d)+' 0 0 1 '+px(it.x+it.w)+' '+px(it.y)+'" fill="none" stroke="'+sealB+'" stroke-width="1.6"/>'+
+        '<rect x="'+px(it.x+it.w-6)+'" y="'+px(it.y)+'" width="'+ln(6)+'" height="'+ln(it.d)+'" fill="#fff" stroke="'+sealB+'" stroke-width="1.6"/></g>';
+    } else if(it.win){ g+='<g transform="rotate('+(it.rot||0)+' '+cxp+' '+cyp+')"><rect x="'+px(it.x)+'" y="'+px(it.y)+'" width="'+ln(it.w)+'" height="'+ln(it.d)+'" fill="#fff" stroke="'+coldB+'" stroke-width="1.6"/>'+
+        '<line x1="'+px(it.x)+'" y1="'+cyp+'" x2="'+px(it.x+it.w)+'" y2="'+cyp+'" stroke="'+coldB+'" stroke-width="1.6"/></g>';
+    } else { const cc=it.wall?[cssv('--wall'),cssv('--wall')]:(P[it.c]||P.shelf), tc=it.wall?'#ffffff':'#1a1f22';
+      g+='<rect x="'+px(it.x)+'" y="'+px(it.y)+'" width="'+ln(it.w)+'" height="'+ln(it.d)+'" fill="'+cc[0]+'" stroke="'+cc[1]+'" stroke-width="1.4"/>';
+      const fs=Math.max(8,Math.min(pw*0.9/Math.max(2,[...it.n].length), pd*0.5, 22));
+      g+='<text x="'+cxp+'" y="'+(parseFloat(cyp)-3).toFixed(1)+'" font-family="sans-serif" font-size="'+fs.toFixed(1)+'" font-weight="700" text-anchor="middle" fill="'+tc+'">'+esc(it.n)+'</text>'+
+        '<text x="'+cxp+'" y="'+(parseFloat(cyp)+fs*0.95).toFixed(1)+'" font-family="monospace" font-size="'+(fs*0.68).toFixed(1)+'" text-anchor="middle" fill="'+tc+'">'+it.w+'×'+it.d+'</text>';
+    } });
+  measures.forEach(m=>{ const A=m.a?ptPos(m.a):[m.x1,m.y1], B=m.b?ptPos(m.b):[m.x2,m.y2];
+    g+='<line x1="'+px(A[0])+'" y1="'+px(A[1])+'" x2="'+px(B[0])+'" y2="'+px(B[1])+'" stroke="'+acc+'" stroke-width="1.5" stroke-dasharray="6 4"/>'+
+      '<text x="'+px((A[0]+B[0])/2)+'" y="'+px((A[1]+B[1])/2)+'" font-family="monospace" font-size="'+Math.round(10*s)+'" font-weight="700" text-anchor="middle" fill="'+acc+'">'+Math.round(Math.hypot(B[0]-A[0],B[1]-A[1]))+'</text>'; });
+  g+='<rect x="'+px(0)+'" y="'+px(PLAN_H+40)+'" width="'+ln(100)+'" height="5" fill="#111"/><text x="'+px(50)+'" y="'+px(PLAN_H+34)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" fill="#555">1m(比例尺)</text>';
+  g+='</svg>'; return g; }
+function exportPNG(){ const svg=buildSVG(); const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'}); const url=URL.createObjectURL(blob);
+  const img=new Image(); img.onload=()=>{ const c=document.createElement('canvas'); c.width=img.naturalWidth||img.width; c.height=img.naturalHeight||img.height;
+    const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,c.width,c.height); ctx.drawImage(img,0,0);
+    c.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='飲料店平面圖.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }); URL.revokeObjectURL(url); };
+  img.onerror=()=>{ alert('產生PNG失敗，改用 PDF 試試'); URL.revokeObjectURL(url); }; img.src=url; }
+function exportPDF(){ const svg=buildSVG(); const w=window.open('','_blank'); if(!w){alert('請允許彈出視窗後再按一次');return;}
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>飲料店平面圖</title><style>@page{size:landscape;margin:6mm}html,body{margin:0}svg{width:100%;height:auto;display:block}</style></head><body>'+svg+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},300);}<\/scr'+'ipt></body></html>'); w.document.close(); }
+$('#png').onclick=exportPNG; $('#pdf').onclick=exportPDF;
+
 window.addEventListener('resize',fit);
-loadM(); load(); fit();
+loadM(); if(!loadFromHash()) load(); fit();
 </script>
