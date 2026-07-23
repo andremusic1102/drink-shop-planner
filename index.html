@@ -47,8 +47,8 @@
   .it:active{cursor:grabbing}
   .it .nm{font-weight:700;line-height:1.08;word-break:break-word}
   .it .dm{font-family:var(--mono);opacity:.85;line-height:1.05}
-  .lblrot{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-90deg);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;line-height:1.05}
+  .lblv{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:2px;overflow:hidden}
+  .lblv>span{writing-mode:vertical-rl;text-orientation:upright;white-space:nowrap;line-height:1.02}
   .it.sel{outline:2.5px solid var(--sel);outline-offset:1px;z-index:20}
   .it.bad{border-color:var(--sel)!important}
   .it.wallit{background:var(--wall)!important;border:1px solid var(--wall)!important;color:var(--card)}
@@ -208,12 +208,17 @@ function render(){
         '<line x1="0" y1="50" x2="100" y2="50" stroke="'+wb+'" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>';
     } else {
       if(!it.wall){ const cc=CAT[it.c]||CAT.shelf; d.style.background=cc[0]; d.style.borderColor=cc[1]; }
-      const tall=pxH>pxW*1.3, L=tall?pxH:pxW, S=tall?pxW:pxH;
-      const nlen=Math.max(1,[...(it.n||'')].length), rows=nlen<=3?1:2, cpr=Math.ceil(nlen/rows);
-      let nf=Math.min(L*0.9/cpr, S*0.78/(rows+0.9)); nf=Math.max(7,Math.min(nf,46)); const df=Math.max(6,nf*0.66);
-      const inner='<span class="nm" style="font-size:'+nf.toFixed(1)+'px">'+it.n+'</span>'+
-        '<span class="dm" style="font-size:'+df.toFixed(1)+'px">'+it.w+'×'+it.d+(it.h?'×'+it.h:'')+'</span>';
-      d.innerHTML = tall ? '<div class="lblrot" style="width:'+pxH.toFixed(0)+'px;height:'+pxW.toFixed(0)+'px">'+inner+'</div>' : inner;
+      const tall=pxH>pxW*1.3;
+      const dims=it.w+'×'+it.d+(it.h?'×'+it.h:'');
+      const nlen=Math.max(1,[...(it.n||'')].length), dlen=dims.length;
+      let nf,df;
+      if(tall){ nf=Math.min(pxH*0.86/nlen, pxW*0.46); nf=Math.max(7,Math.min(nf,40));
+        df=Math.max(6,Math.min(pxH*0.86/dlen, pxW*0.46, nf*0.85));
+        d.innerHTML='<div class="lblv"><span class="nm" style="font-size:'+nf.toFixed(1)+'px">'+it.n+'</span><span class="dm" style="font-size:'+df.toFixed(1)+'px">'+dims+'</span></div>';
+      } else { const rows=nlen<=3?1:2, cpr=Math.ceil(nlen/rows);
+        nf=Math.min(pxW*0.9/cpr, pxH*0.8/(rows+0.9)); nf=Math.max(7,Math.min(nf,46)); df=Math.max(6,nf*0.66);
+        d.innerHTML='<span class="nm" style="font-size:'+nf.toFixed(1)+'px">'+it.n+'</span><span class="dm" style="font-size:'+df.toFixed(1)+'px">'+dims+'</span>';
+      }
     }
     place(d,it.x,it.y,it.w,it.d);
     if(overlaps(it)) d.classList.add('bad');
