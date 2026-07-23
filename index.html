@@ -36,6 +36,7 @@
   .stage{flex:1;overflow:auto;padding:16px}
   .planwrap{position:relative;margin:0 auto}
   .plan{position:absolute;background:var(--card);border:3px solid var(--wall);box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  .plan.measuring{cursor:crosshair}
   .grid{position:absolute;inset:0;pointer-events:none;
     background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);}
   .fx{position:absolute;pointer-events:none;display:flex;align-items:center;justify-content:center;text-align:center;z-index:1;
@@ -99,6 +100,8 @@
       <button class="warn" id="del">🗑 刪除</button>
       <label class="tgl"><input type="checkbox" id="snap" checked> 貼齊(緊貼歸零)</label>
       <label class="tgl"><input type="checkbox" id="gaps" checked> 顯示間距</label>
+      <button id="measure">📏 量距</button>
+      <button id="clearM">清量距</button>
       <button id="save">💾 存檔</button>
       <button id="loadv">📂 讀取</button>
       <button id="io">匯出/匯入</button>
@@ -192,7 +195,7 @@ function fontFor(it,pxW,pxH){ const nlen=Math.max(1,[...(it.n||'')].length);
   let nf=Math.min(pxW*0.9/cpr, pxH*0.82/(rows+0.9)); nf=Math.max(7,Math.min(nf,46)); return nf; }
 
 function render(){
-  [...plan.querySelectorAll('.it,.fx,.gap,.gapln')].forEach(e=>e.remove());
+  [...plan.querySelectorAll('.it,.fx,.gap,.gapln,#measLayer')].forEach(e=>e.remove());
   SHELL.forEach(s=>{ const d=document.createElement('div'); d.className='fx'+(s.stairs?' stairs':'');
     place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+s.name+'</span>'; plan.appendChild(d); });
   items.forEach(it=>{
@@ -224,7 +227,7 @@ function render(){
     if(overlaps(it)) d.classList.add('bad');
     d.dataset.id=it.id; d.addEventListener('pointerdown',startDrag); plan.appendChild(d);
   });
-  renderGaps(); buildList(); updateSel(); $('#foot').textContent='共 '+items.length+' 件';
+  renderGaps(); renderMeasures(); buildList(); updateSel(); $('#foot').textContent='共 '+items.length+' 件';
 }
 function place(el,x,y,w,d){ el.style.left=x*scale+'px'; el.style.top=y*scale+'px'; el.style.width=w*scale+'px'; el.style.height=d*scale+'px'; }
 function skip(a){ return a.door; }
@@ -246,13 +249,13 @@ function snapPos(it,nx,ny){ let sx=nx,sy=ny;
 function renderGaps(){ [...plan.querySelectorAll('.gap,.gapln')].forEach(e=>e.remove());
   const g=$('#gaps'); if(!g||!g.checked) return;
   items.forEach(a=>{ if(a.door||a.win)return; let best=null,bg=1e9;
-    items.forEach(b=>{ if(b===a||b.door||b.win||b.x<a.x+a.w-0.5)return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
-      const gg=b.x-(a.x+a.w); if(gg>=1&&gg<bg){bg=gg;best=b;} });
-    if(best){ const y=(Math.max(a.y,best.y)+Math.min(a.y+a.d,best.y+best.d))/2; addGapH(a.x+a.w,best.x,y,bg); } });
+    items.forEach(b=>{ if(b===a||b.door||b.win)return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
+      const gg=b.x-(a.x+a.w); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
+    if(best&&bg>=1){ const y=(Math.max(a.y,best.y)+Math.min(a.y+a.d,best.y+best.d))/2; addGapH(a.x+a.w,best.x,y,bg); } });
   items.forEach(a=>{ if(a.door||a.win)return; let best=null,bg=1e9;
-    items.forEach(b=>{ if(b===a||b.door||b.win||b.y<a.y+a.d-0.5)return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
-      const gg=b.y-(a.y+a.d); if(gg>=1&&gg<bg){bg=gg;best=b;} });
-    if(best){ const x=(Math.max(a.x,best.x)+Math.min(a.x+a.w,best.x+best.w))/2; addGapV(x,a.y+a.d,best.y,bg); } });
+    items.forEach(b=>{ if(b===a||b.door||b.win)return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
+      const gg=b.y-(a.y+a.d); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
+    if(best&&bg>=1){ const x=(Math.max(a.x,best.x)+Math.min(a.x+a.w,best.x+best.w))/2; addGapV(x,a.y+a.d,best.y,bg); } });
 }
 function addGapH(x1,x2,y,v){ const ln=document.createElement('div'); ln.className='gapln';
   ln.style.left=x1*scale+'px'; ln.style.top=y*scale+'px'; ln.style.width=(x2-x1)*scale+'px'; ln.style.borderTop='1px dashed var(--sel)'; plan.appendChild(ln);
@@ -262,7 +265,7 @@ function addGapV(x,y1,y2,v){ const ln=document.createElement('div'); ln.classNam
   const lb=document.createElement('div'); lb.className='gap'; lb.textContent=Math.round(v); lb.style.left=x*scale+'px'; lb.style.top=((y1+y2)/2)*scale+'px'; plan.appendChild(lb); }
 
 let drag=null;
-function startDrag(e){ const el=e.currentTarget,id=+el.dataset.id,it=items.find(i=>i.id===id); if(!it)return;
+function startDrag(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget,id=+el.dataset.id,it=items.find(i=>i.id===id); if(!it)return;
   sel=id; plan.querySelectorAll('.it.sel').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
   drag={it,el,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y};
   try{el.setPointerCapture(e.pointerId);}catch(_){}
@@ -321,6 +324,29 @@ $('#addWin').onclick=()=>{ const w=Math.max(20,+prompt('窗寬(cm)：','120')||1
   items.push({id:uid++,n:'窗戶',c:'win',w:w,d:16,x:200,y:0,h:0,rot:0,win:true}); sel=uid-1; save(); render(); };
 function flip(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return; it.flip=!it.flip; save(); render(); }
 $('#flip').onclick=flip;
+
+// 量距離工具（兩點直線，含斜角）
+let measures=[], measuring=false, mp=null;
+function loadM(){ try{measures=JSON.parse(localStorage.getItem('drinkshop_meas'))||[];}catch(e){measures=[];} }
+function saveM(){ localStorage.setItem('drinkshop_meas',JSON.stringify(measures)); }
+function planPoint(e){ const r=plan.getBoundingClientRect(); return [(e.clientX-r.left)/scale,(e.clientY-r.top)/scale]; }
+function handleMeasureClick(e){ e.stopPropagation(); e.preventDefault(); const [x,y]=planPoint(e);
+  if(!mp){ mp=[x,y]; renderMeasures(); }
+  else { measures.push({id:uid++,x1:mp[0],y1:mp[1],x2:x,y2:y}); mp=null; saveM(); render(); } }
+function renderMeasures(){ const old=plan.querySelector('#measLayer'); if(old)old.remove(); [...plan.querySelectorAll('.measlb')].forEach(e=>e.remove());
+  const NS='http://www.w3.org/2000/svg', svg=document.createElementNS(NS,'svg'); svg.id='measLayer';
+  svg.setAttribute('style','position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:18;overflow:visible');
+  const ac=cssv('--accent'); let html='';
+  measures.forEach(m=>{ html+='<line x1="'+(m.x1*scale)+'" y1="'+(m.y1*scale)+'" x2="'+(m.x2*scale)+'" y2="'+(m.y2*scale)+'" stroke="'+ac+'" stroke-width="1.5" stroke-dasharray="5 3"/>'+
+    '<circle cx="'+(m.x1*scale)+'" cy="'+(m.y1*scale)+'" r="3.2" fill="'+ac+'"/><circle cx="'+(m.x2*scale)+'" cy="'+(m.y2*scale)+'" r="3.2" fill="'+ac+'"/>'; });
+  if(mp) html+='<circle cx="'+(mp[0]*scale)+'" cy="'+(mp[1]*scale)+'" r="4.5" fill="none" stroke="'+ac+'" stroke-width="2"/>';
+  svg.innerHTML=html; plan.appendChild(svg);
+  measures.forEach(m=>{ const mx=(m.x1+m.x2)/2*scale, my=(m.y1+m.y2)/2*scale, dist=Math.round(Math.hypot(m.x2-m.x1,m.y2-m.y1));
+    const lb=document.createElement('div'); lb.className='gap measlb'; lb.style.borderColor=ac; lb.style.color=ac; lb.style.zIndex='19';
+    lb.style.left=mx+'px'; lb.style.top=my+'px'; lb.style.pointerEvents='auto'; lb.style.cursor='pointer'; lb.title='點一下刪除這條'; lb.textContent=dist;
+    lb.onclick=(ev)=>{ ev.stopPropagation(); measures=measures.filter(z=>z.id!==m.id); saveM(); render(); }; plan.appendChild(lb); }); }
+$('#measure').onclick=()=>{ measuring=!measuring; mp=null; $('#measure').classList.toggle('p',measuring); plan.classList.toggle('measuring',measuring); render(); };
+$('#clearM').onclick=()=>{ if(measures.length&&confirm('清除所有量測線？')){ measures=[]; mp=null; saveM(); render(); } };
 const od=$('#objDlg'); $('#addObj').onclick=()=>od.showModal(); $('#oCancel').onclick=()=>od.close();
 $('#oOk').onclick=()=>{ const n=$('#oName').value.trim()||'物件',w=+$('#oW').value||60,d=+$('#oD').value||60;
   items.push({id:uid++,n,c:'shelf',w,d,x:40,y:40,h:0,rot:0,door:false}); sel=uid-1; od.close(); save(); render(); };
@@ -328,27 +354,27 @@ $('#oOk').onclick=()=>{ const n=$('#oName').value.trim()||'物件',w=+$('#oW').v
 const SK='drinkshop_saves';
 const getSaves=()=>{try{return JSON.parse(localStorage.getItem(SK))||{};}catch(e){return{};}};
 $('#save').onclick=()=>{ const n=prompt('存檔名稱：','版本'+(Object.keys(getSaves()).length+1)); if(!n)return;
-  const s=getSaves(); s[n]=items; localStorage.setItem(SK,JSON.stringify(s)); const b=$('#save'); b.textContent='✓ 已存'; setTimeout(()=>b.textContent='💾 存檔',1200); };
+  const s=getSaves(); s[n]={items:items,measures:measures}; localStorage.setItem(SK,JSON.stringify(s)); const b=$('#save'); b.textContent='✓ 已存'; setTimeout(()=>b.textContent='💾 存檔',1200); };
 const svDlg=$('#svDlg'); $('#loadv').onclick=()=>{renderSaves();svDlg.showModal();}; $('#svClose').onclick=()=>svDlg.close();
 function renderSaves(){ const s=getSaves(),w=$('#svList'),names=Object.keys(s);
   w.innerHTML=names.length?'':'<div style="color:var(--sub)">還沒有存檔（先按「💾 存檔」）</div>';
   names.forEach(n=>{ const row=document.createElement('div'); row.className='svrow';
     const sp=document.createElement('span'); sp.textContent=n; row.appendChild(sp);
     const b1=document.createElement('button'); b1.textContent='讀取'; b1.className='p';
-    b1.onclick=()=>{items=JSON.parse(JSON.stringify(s[n]));uid=Math.max(0,...items.map(i=>i.id||0))+1;sel=null;save();render();svDlg.close();};
+    b1.onclick=()=>{const dd=s[n]; if(Array.isArray(dd)){items=JSON.parse(JSON.stringify(dd));measures=[];}else{items=JSON.parse(JSON.stringify(dd.items||[]));measures=JSON.parse(JSON.stringify(dd.measures||[]));} uid=Math.max(0,...items.map(i=>i.id||0),...measures.map(m=>m.id||0))+1;sel=null;save();saveM();render();svDlg.close();};
     const b2=document.createElement('button'); b2.textContent='刪除'; b2.className='warn';
     b2.onclick=()=>{const ss=getSaves();delete ss[n];localStorage.setItem(SK,JSON.stringify(ss));renderSaves();};
     row.appendChild(b1);row.appendChild(b2);w.appendChild(row); }); }
 
 const iod=$('#ioDlg');
-$('#io').onclick=()=>{$('#ioText').value=JSON.stringify(items);iod.showModal();}; $('#ioClose').onclick=()=>iod.close();
+$('#io').onclick=()=>{$('#ioText').value=JSON.stringify({items:items,measures:measures});iod.showModal();}; $('#ioClose').onclick=()=>iod.close();
 $('#ioCopy').onclick=()=>{navigator.clipboard.writeText($('#ioText').value);$('#ioCopy').textContent='已複製';setTimeout(()=>$('#ioCopy').textContent='複製',1200);};
-$('#ioImport').onclick=()=>{try{const a=JSON.parse($('#ioText').value);if(Array.isArray(a)){items=a;uid=Math.max(0,...items.map(i=>i.id||0))+1;sel=null;save();render();iod.close();}}catch(e){alert('配置碼看不懂');}};
+$('#ioImport').onclick=()=>{try{const p=JSON.parse($('#ioText').value); items=Array.isArray(p)?p:(p.items||[]); measures=Array.isArray(p)?measures:(p.measures||[]); uid=Math.max(0,...items.map(i=>i.id||0),...measures.map(m=>m.id||0))+1; sel=null; save(); saveM(); render(); iod.close();}catch(e){alert('配置碼看不懂');}};
 $('#rot').onclick=rotate; $('#rot2').onclick=rotate; $('#dup').onclick=dup; $('#dup2').onclick=dup; $('#del').onclick=del; $('#del2').onclick=del;
 $('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉你的調整）')) reset(); };
 $('#zoom').oninput=fit; $('#gaps').onchange=renderGaps;
 document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT')return; if(e.key==='r'||e.key==='R')rotate(); if(e.key==='d'||e.key==='D')dup(); if(e.key==='Delete'||e.key==='Backspace')del(); });
-plan.addEventListener('pointerdown',e=>{ if(e.target===plan||e.target.classList.contains('grid')){sel=null;render();} });
+plan.addEventListener('pointerdown',e=>{ if(measuring){ handleMeasureClick(e); return; } if(e.target===plan||e.target.classList.contains('grid')){sel=null;render();} });
 window.addEventListener('resize',fit);
-load(); fit();
+loadM(); load(); fit();
 </script>
