@@ -1,0 +1,305 @@
+<title>飲料店一樓 · 互動平面編輯器</title>
+<style>
+  :root{
+    --bg:#e7ebec; --card:#f7f9f9; --ink:#232a2e; --sub:#5f6e70; --line:#c6d0ce; --line2:#dbe3e1;
+    --accent:#2f7d72; --wall:#2b3236; --grid:#d8e0de; --sel:#e0632c;
+    --cold:#cfe0e8; --coldB:#4a86a6; --water:#cfe6e2; --waterB:#2f8f8a; --heat:#f0dcc6; --heatB:#c47a3a;
+    --seal:#e4ddf1; --sealB:#7a5fb0; --counter:#d3e3de; --counterB:#2f6f63; --shrine:#eee0c2; --shrineB:#a5842f;
+    --shelf:#dee4e4; --shelfB:#6b7a7a; --shell:#e9ecec; --shellB:#8a9694;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace; --sans:ui-sans-serif,-apple-system,"PingFang TC","Noto Sans TC",sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0f1416; --card:#171d20; --ink:#e6ebe9; --sub:#93a3a3; --line:#33413f; --line2:#26302f;
+    --accent:#5fb8a8; --wall:#c3ccca; --grid:#20292a; --sel:#e0854e;
+    --cold:#22404e; --coldB:#6fb4d4; --water:#1f4340; --waterB:#54c2b8; --heat:#4a3524; --heatB:#e0995a;
+    --seal:#332a49; --sealB:#a891d6; --counter:#1e3b37; --counterB:#5fb8a8; --shrine:#43371d; --shrineB:#d4b45e;
+    --shelf:#2a3335; --shelfB:#8fa0a0; --shell:#1c2426; --shellB:#5c6a68;
+  }}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);overscroll-behavior:none}
+  .app{display:flex;flex-direction:column;height:100vh}
+  header{padding:8px 12px;border-bottom:1px solid var(--line);background:var(--card);flex:none}
+  .titl{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  h1{font-size:16px;margin:0;font-weight:650}
+  .hint{font-size:11.5px;color:var(--sub);font-family:var(--mono)}
+  .bar{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
+  button{font-family:var(--sans);font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--ink);
+    border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:5px}
+  button:hover{border-color:var(--accent)}
+  button.p{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.warn{color:var(--sel);border-color:var(--sel)}
+  .tgl{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--sub);cursor:pointer;user-select:none}
+  .zoom{display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;color:var(--sub)}
+  .zoom input{width:90px}
+  main{flex:1;display:flex;min-height:0}
+  .stage{flex:1;overflow:auto;padding:16px;background:
+    repeating-linear-gradient(0deg,transparent,transparent 39px,var(--line2) 39px,var(--line2) 40px),
+    repeating-linear-gradient(90deg,transparent,transparent 39px,var(--line2) 39px,var(--line2) 40px);}
+  .planwrap{position:relative;margin:0 auto}
+  .plan{position:relative;background:var(--card);border:3px solid var(--wall);box-shadow:0 2px 10px rgba(0,0,0,.12)}
+  .grid{position:absolute;inset:0;pointer-events:none;
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);}
+  .fx{position:absolute;pointer-events:none;display:flex;align-items:center;justify-content:center;text-align:center;
+    font-size:10px;color:var(--sub);font-family:var(--mono);border:1px dashed var(--shellB);background:var(--shell);border-radius:2px}
+  .fx.stairs{background:repeating-linear-gradient(90deg,var(--shell),var(--shell) 5px,var(--shellB) 5px,var(--shellB) 5.6px)}
+  .it{position:absolute;border:1.5px solid var(--counterB);background:var(--counter);border-radius:3px;cursor:grab;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;
+    touch-action:none;user-select:none;padding:1px}
+  .it:active{cursor:grabbing}
+  .it .nm{font-size:10px;font-weight:700;line-height:1.05}
+  .it .dm{font-size:8.5px;font-family:var(--mono);opacity:.8;line-height:1}
+  .it.sel{outline:2.5px solid var(--sel);outline-offset:1px;z-index:20}
+  .it.bad{border-color:var(--sel)!important}
+  .it.door{background:transparent;border:none}
+  .it.door svg{width:100%;height:100%;overflow:visible}
+  .panel{width:250px;flex:none;border-left:1px solid var(--line);background:var(--card);display:flex;flex-direction:column;min-height:0}
+  @media(max-width:720px){main{flex-direction:column}.panel{width:auto;border-left:none;border-top:1px solid var(--line);max-height:38vh}}
+  .sel-info{padding:12px;border-bottom:1px solid var(--line)}
+  .sel-info h2{font-size:12px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--sub);margin:0 0 8px}
+  .kv{font-size:13px;margin:3px 0;font-family:var(--mono)}
+  .kv b{font-family:var(--sans)}
+  .rowbtn{display:flex;gap:6px;margin-top:8px}
+  .rowbtn button{flex:1;justify-content:center;font-size:12px;padding:6px}
+  .list{flex:1;overflow:auto;padding:8px 10px}
+  .list h2{font-size:11px;font-family:var(--mono);text-transform:uppercase;color:var(--sub);margin:6px 2px}
+  .chip{display:flex;align-items:center;gap:7px;padding:4px 6px;border-radius:6px;cursor:pointer;font-size:12.5px}
+  .chip:hover{background:var(--line2)}
+  .chip.on{background:var(--line2)}
+  .sw{width:11px;height:11px;border-radius:3px;border:1px solid rgba(0,0,0,.2);flex:none}
+  .foot{font-size:11px;color:var(--sub);padding:6px 10px;border-top:1px solid var(--line);font-family:var(--mono)}
+  dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);padding:16px;max-width:340px;width:92%}
+  dialog::backdrop{background:rgba(0,0,0,.4)}
+  dialog h3{margin:0 0 10px;font-size:15px}
+  dialog label{display:block;font-size:12px;color:var(--sub);margin:8px 0 3px}
+  dialog input,dialog textarea{width:100%;padding:7px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:13px}
+  dialog textarea{height:120px;resize:vertical}
+  .dlgrow{display:flex;gap:8px}.dlgrow>*{flex:1}
+  .svrow{display:flex;align-items:center;gap:8px}.svrow>span{flex:1;font-weight:600}.svrow button{padding:4px 9px;font-size:12px}
+</style>
+
+<div class="app">
+  <header>
+    <div class="titl">
+      <h1>飲料店一樓 · 互動平面編輯器</h1>
+      <span class="hint">1300×375cm · 格線每50cm · 拖拉移動 · 點選後可旋轉/刪除</span>
+    </div>
+    <div class="bar">
+      <button class="p" id="addDoor">＋ 門</button>
+      <button id="addObj">＋ 自訂物件</button>
+      <button id="rot">⟳ 旋轉90°</button>
+      <button class="warn" id="del">🗑 刪除</button>
+      <label class="tgl"><input type="checkbox" id="snap" checked> 貼齊5cm</label>
+      <button id="save">💾 存檔</button>
+      <button id="loadv">📂 讀取</button>
+      <button id="io">匯出/匯入</button>
+      <button class="warn" id="reset">重設</button>
+      <span class="zoom">🔍 <input type="range" id="zoom" min="0.4" max="2.4" step="0.05" value="1"></span>
+    </div>
+  </header>
+  <main>
+    <div class="stage" id="stage">
+      <div class="planwrap" id="planwrap">
+        <div class="plan" id="plan"><div class="grid" id="gridEl"></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="sel-info" id="selInfo">
+        <h2>目前選取</h2>
+        <div id="selBody" class="kv" style="color:var(--sub)">點一個方塊來看尺寸／移動它</div>
+        <div class="rowbtn" id="selBtns" style="display:none">
+          <button id="rot2">⟳ 旋轉</button><button class="warn" id="del2">刪除</button>
+        </div>
+      </div>
+      <div class="list" id="list"></div>
+      <div class="foot" id="foot">已就位 0 件</div>
+    </div>
+  </main>
+</div>
+
+<dialog id="objDlg"><h3>新增自訂物件</h3>
+  <label>名稱</label><input id="oName" placeholder="例如：三槽水槽">
+  <div class="dlgrow"><div><label>長(cm)</label><input id="oW" type="number" value="90"></div>
+  <div><label>寬(cm)</label><input id="oD" type="number" value="60"></div></div>
+  <div class="rowbtn"><button class="p" id="oOk">新增</button><button id="oCancel">取消</button></div>
+</dialog>
+<dialog id="svDlg"><h3>讀取存檔</h3>
+  <div id="svList" style="display:flex;flex-direction:column;gap:8px;font-size:13px"></div>
+  <div class="rowbtn" style="margin-top:12px"><button id="svClose">關閉</button></div>
+</dialog>
+<dialog id="ioDlg"><h3>匯出／匯入配置</h3>
+  <label>把這段複製給我，或貼上別人給的配置碼後按「匯入」</label>
+  <textarea id="ioText"></textarea>
+  <div class="rowbtn"><button class="p" id="ioCopy">複製</button><button id="ioImport">匯入</button><button id="ioClose">關閉</button></div>
+</dialog>
+
+<script>
+const PLAN_W=1300, PLAN_H=375;
+const CAT={counter:['var(--counter)','var(--counterB)'],cold:['var(--cold)','var(--coldB)'],water:['var(--water)','var(--waterB)'],
+  heat:['var(--heat)','var(--heatB)'],seal:['var(--seal)','var(--sealB)'],shrine:['var(--shrine)','var(--shrineB)'],shelf:['var(--shelf)','var(--shelfB)']};
+// 固定殼（不可拖）
+const SHELL=[
+  {name:'玄關 175×100',x:1125,y:0,w:175,d:100,stairs:false},
+  {name:'樓梯 267×100',x:858,y:0,w:267,d:100,stairs:true},
+  {name:'廁所 140×269',x:137,y:106,w:140,d:269,stairs:false},
+];
+// 設備（可拖）＋門，起始用圖三v3擺法
+const DEFAULT=[
+  {n:'工作台2(含水槽)',c:'counter',w:78,d:196,x:1215,y:100,h:123},
+  {n:'出餐檯',c:'counter',w:93,d:61,x:1200,y:300,h:80},
+  {n:'外場冰箱',c:'cold',w:75,d:78,x:878,y:108,h:182},
+  {n:'洗手台①',c:'water',w:100,d:55,x:960,y:108,h:90},
+  {n:'綠豆沙冰箱',c:'cold',w:131,d:66,x:878,y:200,h:92},
+  {n:'冰桶',c:'water',w:49,d:81,x:1018,y:185,h:86},
+  {n:'茶桶①',c:'water',w:57,d:33,x:800,y:8,h:88},
+  {n:'茶桶②',c:'water',w:57,d:33,x:800,y:50,h:88},
+  {n:'爐台(+排煙罩)',c:'heat',w:112,d:70,x:969,y:305,h:93},
+  {n:'主封口機',c:'seal',w:69,d:48,x:1081,y:327,h:86},
+  {n:'封口機1',c:'seal',w:50,d:40,x:1150,y:335,h:77},
+  {n:'果醬架',c:'shelf',w:90,d:45,x:789,y:330,h:150},
+  {n:'茶葉架',c:'shelf',w:90,d:45,x:879,y:330,h:160},
+  {n:'廚具架',c:'shelf',w:90,d:50,x:560,y:8,h:213},
+  {n:'製冰機',c:'cold',w:122,d:60,x:665,y:8,h:193},
+  {n:'神明桌',c:'shrine',w:67,d:133,x:510,y:125,h:231},
+  {n:'後場冰箱(臥式)',c:'cold',w:157,d:65,x:395,y:305,h:88},
+  {n:'備貨架②',c:'shelf',w:45,d:90,x:15,y:125,h:160},
+  {n:'備貨架①',c:'shelf',w:45,d:90,x:15,y:225,h:160},
+  {n:'洗手台②',c:'water',w:100,d:55,x:12,y:315,h:90},
+  {n:'餐具架2',c:'shelf',w:45,d:90,x:280,y:115,h:170},
+  {n:'餐具架',c:'shelf',w:30,d:60,x:280,y:225,h:165},
+];
+let items=[], scale=1, sel=null, uid=1;
+const $=s=>document.querySelector(s), plan=$('#plan'), planwrap=$('#planwrap'), stage=$('#stage');
+
+function load(){
+  const s=localStorage.getItem('drinkshop_v1');
+  if(s){try{items=JSON.parse(s);uid=Math.max(0,...items.map(i=>i.id||0))+1;return;}catch(e){}}
+  reset();
+}
+function reset(){ items=DEFAULT.map(o=>({...o,id:uid++,rot:0,door:false})); sel=null; save(); render(); }
+function save(){ localStorage.setItem('drinkshop_v1',JSON.stringify(items)); }
+
+function fit(){
+  const availW=stage.clientWidth-32;
+  const base=availW/PLAN_W;
+  scale=base*parseFloat($('#zoom').value);
+  const W=PLAN_W*scale,H=PLAN_H*scale;
+  planwrap.style.width=W+'px'; planwrap.style.height=H+'px';
+  plan.style.width=W+'px'; plan.style.height=H+'px';
+  $('#gridEl').style.backgroundSize=(50*scale)+'px '+(50*scale)+'px';
+  render();
+}
+function render(){
+  [...plan.querySelectorAll('.it,.fx')].forEach(e=>e.remove());
+  // 固定殼
+  SHELL.forEach(s=>{
+    const d=document.createElement('div'); d.className='fx'+(s.stairs?' stairs':'');
+    place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+s.name+'</span>'; plan.appendChild(d);
+  });
+  items.forEach(it=>{
+    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(sel===it.id?' sel':'');
+    if(it.door){
+      d.innerHTML='<svg viewBox="0 0 100 60" preserveAspectRatio="none"><path d="M2 4 H70" stroke="'+cssv('--sealB')+'" stroke-width="6"/><path d="M70 4 A66 66 0 0 1 4 56" fill="none" stroke="'+cssv('--sealB')+'" stroke-width="3" stroke-dasharray="6 4"/><text x="30" y="40" font-size="20" fill="'+cssv('--ink')+'">門'+(it.w)+'</text></svg>';
+    } else {
+      const cc=CAT[it.c]||CAT.shelf; d.style.background=cc[0]; d.style.borderColor=cc[1];
+      d.innerHTML='<span class="nm">'+it.n+'</span><span class="dm">'+it.w+'×'+it.d+(it.h?'×'+it.h:'')+'</span>';
+    }
+    place(d,it.x,it.y,it.w,it.d);
+    if(overlaps(it)) d.classList.add('bad');
+    d.dataset.id=it.id;
+    d.addEventListener('pointerdown',startDrag);
+    plan.appendChild(d);
+  });
+  buildList(); updateSel();
+  $('#foot').textContent='共 '+items.length+' 件';
+}
+function place(el,x,y,w,d){ el.style.left=x*scale+'px'; el.style.top=y*scale+'px'; el.style.width=w*scale+'px'; el.style.height=d*scale+'px'; }
+function cssv(v){ return getComputedStyle(document.documentElement).getPropertyValue(v)||'#888'; }
+function overlaps(a){ return items.some(b=>b!==a && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
+
+let drag=null;
+function startDrag(e){
+  const id=+e.currentTarget.dataset.id; const it=items.find(i=>i.id===id);
+  sel=id; render();
+  drag={it,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y,moved:false};
+  e.currentTarget.setPointerCapture(e.pointerId);
+  e.currentTarget.addEventListener('pointermove',onDrag);
+  e.currentTarget.addEventListener('pointerup',endDrag);
+  e.preventDefault();
+}
+function onDrag(e){
+  if(!drag)return; const it=drag.it;
+  let nx=drag.ox+(e.clientX-drag.sx)/scale, ny=drag.oy+(e.clientY-drag.sy)/scale;
+  nx=Math.max(0,Math.min(PLAN_W-it.w,nx)); ny=Math.max(0,Math.min(PLAN_H-it.d,ny));
+  it.x=nx; it.y=ny; drag.moved=true;
+  const el=[...plan.querySelectorAll('.it')].find(d=>+d.dataset.id===it.id);
+  if(el){el.style.left=nx*scale+'px';el.style.top=ny*scale+'px';el.classList.toggle('bad',overlaps(it));}
+  updateSel();
+}
+function endDrag(e){
+  if(!drag)return; const it=drag.it;
+  if($('#snap').checked){it.x=Math.round(it.x/5)*5; it.y=Math.round(it.y/5)*5;}
+  drag=null; save(); render();
+}
+function rotate(){ if(sel==null)return; const it=items.find(i=>i.id===sel); const cx=it.x+it.w/2,cy=it.y+it.d/2;
+  [it.w,it.d]=[it.d,it.w]; it.rot=(it.rot+90)%360; it.x=Math.max(0,Math.min(PLAN_W-it.w,cx-it.w/2)); it.y=Math.max(0,Math.min(PLAN_H-it.d,cy-it.d/2)); save(); render(); }
+function del(){ if(sel==null)return; items=items.filter(i=>i.id!==sel); sel=null; save(); render(); }
+function updateSel(){
+  const it=items.find(i=>i.id===sel);
+  if(!it){$('#selBody').innerHTML='點一個方塊來看尺寸／移動它';$('#selBody').style.color='var(--sub)';$('#selBtns').style.display='none';return;}
+  $('#selBody').style.color='var(--ink)';$('#selBtns').style.display='flex';
+  $('#selBody').innerHTML='<div class="kv"><b>'+it.n+'</b></div>'+
+    '<div class="kv">尺寸 '+it.w+' × '+it.d+(it.h?' × '+it.h:'')+' cm</div>'+
+    '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>'+
+    '<div class="kv">距左牆 '+Math.round(it.x)+' · 距上牆 '+Math.round(it.y)+'</div>'+
+    (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'');
+}
+function buildList(){
+  const wrap=$('#list'); wrap.innerHTML='<h2>設備清單（點一下跳到）</h2>';
+  items.forEach(it=>{
+    const cc=CAT[it.c]||CAT.shelf; const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':'');
+    c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span>'+(it.door?'門':it.n)+' <span style="margin-left:auto;color:var(--sub);font-family:var(--mono);font-size:11px">'+it.w+'×'+it.d+'</span>';
+    c.onclick=()=>{sel=it.id;render();stage.scrollTo({left:it.x*scale-100,top:it.y*scale-60,behavior:'smooth'});};
+    wrap.appendChild(c);
+  });
+}
+// 加門 / 加物件
+$('#addDoor').onclick=()=>{ items.push({id:uid++,n:'門',c:'seal',w:90,d:16,x:20,y:20,h:0,rot:0,door:true}); sel=uid-1; save(); render(); };
+const od=$('#objDlg');
+$('#addObj').onclick=()=>od.showModal();
+$('#oCancel').onclick=()=>od.close();
+$('#oOk').onclick=()=>{ const n=$('#oName').value.trim()||'物件'; const w=+$('#oW').value||60,d=+$('#oD').value||60;
+  items.push({id:uid++,n,c:'shelf',w,d,x:20,y:20,h:0,rot:0,door:false}); sel=uid-1; od.close(); save(); render(); };
+// 命名存檔 / 讀取
+const SK='drinkshop_saves';
+function getSaves(){try{return JSON.parse(localStorage.getItem(SK))||{};}catch(e){return{};}}
+$('#save').onclick=()=>{ const n=prompt('存檔名稱：','版本'+(Object.keys(getSaves()).length+1)); if(!n)return;
+  const s=getSaves(); s[n]=items; localStorage.setItem(SK,JSON.stringify(s)); const b=$('#save'); b.textContent='✓ 已存'; setTimeout(()=>b.textContent='💾 存檔',1200); };
+const svDlg=$('#svDlg');
+$('#loadv').onclick=()=>{ renderSaves(); svDlg.showModal(); };
+$('#svClose').onclick=()=>svDlg.close();
+function renderSaves(){ const s=getSaves(),w=$('#svList'),names=Object.keys(s);
+  w.innerHTML = names.length?'':'<div style="color:var(--sub)">還沒有存檔（先按「💾 存檔」）</div>';
+  names.forEach(n=>{ const row=document.createElement('div'); row.className='svrow';
+    const sp=document.createElement('span'); sp.textContent=n; row.appendChild(sp);
+    const b1=document.createElement('button'); b1.textContent='讀取'; b1.className='p';
+    b1.onclick=()=>{ items=JSON.parse(JSON.stringify(s[n])); uid=Math.max(0,...items.map(i=>i.id||0))+1; sel=null; save(); render(); svDlg.close(); };
+    const b2=document.createElement('button'); b2.textContent='刪除'; b2.className='warn';
+    b2.onclick=()=>{ const ss=getSaves(); delete ss[n]; localStorage.setItem(SK,JSON.stringify(ss)); renderSaves(); };
+    row.appendChild(b1); row.appendChild(b2); w.appendChild(row); });
+}
+// 匯出匯入
+const iod=$('#ioDlg');
+$('#io').onclick=()=>{ $('#ioText').value=JSON.stringify(items); iod.showModal(); };
+$('#ioClose').onclick=()=>iod.close();
+$('#ioCopy').onclick=()=>{ navigator.clipboard.writeText($('#ioText').value); $('#ioCopy').textContent='已複製'; setTimeout(()=>$('#ioCopy').textContent='複製',1200); };
+$('#ioImport').onclick=()=>{ try{const a=JSON.parse($('#ioText').value); if(Array.isArray(a)){items=a;uid=Math.max(0,...items.map(i=>i.id||0))+1;sel=null;save();render();iod.close();}}catch(e){alert('配置碼看不懂');} };
+// 按鈕
+$('#rot').onclick=rotate; $('#rot2').onclick=rotate; $('#del').onclick=del; $('#del2').onclick=del;
+$('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉你的調整）')) reset(); };
+$('#zoom').oninput=fit;
+document.addEventListener('keydown',e=>{ if(e.key==='r'||e.key==='R')rotate(); if(e.key==='Delete'||e.key==='Backspace')del(); });
+plan.addEventListener('pointerdown',e=>{ if(e.target===plan||e.target.classList.contains('grid')){sel=null;render();} });
+window.addEventListener('resize',fit);
+load(); fit();
+</script>
