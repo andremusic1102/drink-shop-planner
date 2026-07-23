@@ -276,7 +276,7 @@ function onDrag(e){ if(!drag)return; const it=drag.it;
   if(it.door){ /* 門可超出圖面、不吸附 */ }
   else { [nx,ny]=clampPos(it,nx,ny); if($('#snap').checked)[nx,ny]=snapPos(it,nx,ny); }
   it.x=nx; it.y=ny; drag.el.style.left=nx*scale+'px'; drag.el.style.top=ny*scale+'px';
-  drag.el.classList.toggle('bad',overlaps(it)); renderGaps(); updateSel(); }
+  drag.el.classList.toggle('bad',overlaps(it)); renderGaps(); renderMeasures(); updateSel(); }
 function endDrag(){ if(!drag)return; const el=drag.el;
   el.removeEventListener('pointermove',onDrag); el.removeEventListener('pointerup',endDrag); el.removeEventListener('pointercancel',endDrag);
   drag=null; save(); render(); }
@@ -329,19 +329,33 @@ $('#flip').onclick=flip;
 let measures=[], measuring=false, mp=null;
 function loadM(){ try{measures=JSON.parse(localStorage.getItem('drinkshop_meas'))||[];}catch(e){measures=[];} }
 function saveM(){ localStorage.setItem('drinkshop_meas',JSON.stringify(measures)); }
-function planPoint(e){ const r=plan.getBoundingClientRect(); return [(e.clientX-r.left)/scale,(e.clientY-r.top)/scale]; }
-function handleMeasureClick(e){ e.stopPropagation(); e.preventDefault(); const [x,y]=planPoint(e);
-  if(!mp){ mp=[x,y]; renderMeasures(); }
-  else { measures.push({id:uid++,x1:mp[0],y1:mp[1],x2:x,y2:y}); mp=null; saveM(); render(); } }
+function ptPos(p){ if(!p)return [0,0]; if(p.ref!=null){ const it=items.find(i=>i.id===p.ref); if(it) return [it.x+p.cx*it.w, it.y+p.cy*it.d]; } return [p.x||0,p.y||0]; }
+function snapPoint(clx,cly){ const TH=18; let best=null,bd=TH;
+  items.forEach(it=>{ if(it.door||it.win)return; for(let cx=0;cx<=1;cx++)for(let cy=0;cy<=1;cy++){
+    const gx=(it.x+cx*it.w)*scale, gy=(it.y+cy*it.d)*scale, dd=Math.hypot(gx-clx,gy-cly);
+    if(dd<bd){bd=dd;best={ref:it.id,cx,cy,x:it.x+cx*it.w,y:it.y+cy*it.d};} } });
+  SHELL.forEach(s=>{ for(let cx=0;cx<=1;cx++)for(let cy=0;cy<=1;cy++){
+    const gx=(s.x+cx*s.w)*scale, gy=(s.y+cy*s.d)*scale, dd=Math.hypot(gx-clx,gy-cly);
+    if(dd<bd){bd=dd;best={x:s.x+cx*s.w,y:s.y+cy*s.d};} } });
+  if(best) return best;
+  let x=clx/scale, y=cly/scale;
+  if(Math.abs(x)<20)x=0; if(Math.abs(x-PLAN_W)<20)x=PLAN_W;
+  if(Math.abs(y)<20)y=0; if(Math.abs(y-PLAN_H)<20)y=PLAN_H;
+  return {x:Math.round(x),y:Math.round(y)}; }
+function handleMeasureClick(e){ e.stopPropagation(); e.preventDefault(); const r=plan.getBoundingClientRect();
+  const pt=snapPoint(e.clientX-r.left, e.clientY-r.top);
+  if(!mp){ mp=pt; renderMeasures(); } else { measures.push({id:uid++,a:mp,b:pt}); mp=null; saveM(); render(); } }
 function renderMeasures(){ const old=plan.querySelector('#measLayer'); if(old)old.remove(); [...plan.querySelectorAll('.measlb')].forEach(e=>e.remove());
   const NS='http://www.w3.org/2000/svg', svg=document.createElementNS(NS,'svg'); svg.id='measLayer';
   svg.setAttribute('style','position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:18;overflow:visible');
   const ac=cssv('--accent'); let html='';
-  measures.forEach(m=>{ html+='<line x1="'+(m.x1*scale)+'" y1="'+(m.y1*scale)+'" x2="'+(m.x2*scale)+'" y2="'+(m.y2*scale)+'" stroke="'+ac+'" stroke-width="1.5" stroke-dasharray="5 3"/>'+
-    '<circle cx="'+(m.x1*scale)+'" cy="'+(m.y1*scale)+'" r="3.2" fill="'+ac+'"/><circle cx="'+(m.x2*scale)+'" cy="'+(m.y2*scale)+'" r="3.2" fill="'+ac+'"/>'; });
-  if(mp) html+='<circle cx="'+(mp[0]*scale)+'" cy="'+(mp[1]*scale)+'" r="4.5" fill="none" stroke="'+ac+'" stroke-width="2"/>';
+  measures.forEach(m=>{ const [ax,ay]=m.a?ptPos(m.a):[m.x1,m.y1], [bx,by]=m.b?ptPos(m.b):[m.x2,m.y2];
+    html+='<line x1="'+(ax*scale)+'" y1="'+(ay*scale)+'" x2="'+(bx*scale)+'" y2="'+(by*scale)+'" stroke="'+ac+'" stroke-width="1.5" stroke-dasharray="5 3"/>'+
+      '<circle cx="'+(ax*scale)+'" cy="'+(ay*scale)+'" r="3.2" fill="'+ac+'"/><circle cx="'+(bx*scale)+'" cy="'+(by*scale)+'" r="3.2" fill="'+ac+'"/>'; });
+  if(mp){ const [px,py]=ptPos(mp); html+='<circle cx="'+(px*scale)+'" cy="'+(py*scale)+'" r="4.5" fill="none" stroke="'+ac+'" stroke-width="2"/>'; }
   svg.innerHTML=html; plan.appendChild(svg);
-  measures.forEach(m=>{ const mx=(m.x1+m.x2)/2*scale, my=(m.y1+m.y2)/2*scale, dist=Math.round(Math.hypot(m.x2-m.x1,m.y2-m.y1));
+  measures.forEach(m=>{ const [ax,ay]=m.a?ptPos(m.a):[m.x1,m.y1], [bx,by]=m.b?ptPos(m.b):[m.x2,m.y2];
+    const mx=(ax+bx)/2*scale, my=(ay+by)/2*scale, dist=Math.round(Math.hypot(bx-ax,by-ay));
     const lb=document.createElement('div'); lb.className='gap measlb'; lb.style.borderColor=ac; lb.style.color=ac; lb.style.zIndex='19';
     lb.style.left=mx+'px'; lb.style.top=my+'px'; lb.style.pointerEvents='auto'; lb.style.cursor='pointer'; lb.title='點一下刪除這條'; lb.textContent=dist;
     lb.onclick=(ev)=>{ ev.stopPropagation(); measures=measures.filter(z=>z.id!==m.id); saveM(); render(); }; plan.appendChild(lb); }); }
