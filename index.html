@@ -194,8 +194,8 @@ function render(){
     const pxW=it.w*scale, pxH=it.d*scale;
     if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
-        '<path d="M2.5 100 A97.5 97.5 0 0 1 100 2.5" fill="none" stroke="'+sb+'" stroke-width="1.8"/>'+
-        '<rect x="0.5" y="0" width="5" height="100" fill="'+cssv('--card')+'" stroke="'+sb+'" stroke-width="1.8"/></svg>';
+        '<path d="M0 100 A100 100 0 0 1 100 0" fill="none" stroke="'+sb+'" stroke-width="1.6" vector-effect="non-scaling-stroke"/>'+
+        '<rect x="0" y="0" width="6" height="100" fill="'+cssv('--card')+'" stroke="'+sb+'" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>';
     } else {
       if(!it.wall){ const cc=CAT[it.c]||CAT.shelf; d.style.background=cc[0]; d.style.borderColor=cc[1]; }
       const nf=fontFor(it,pxW,pxH), df=Math.max(6,nf*0.66);
