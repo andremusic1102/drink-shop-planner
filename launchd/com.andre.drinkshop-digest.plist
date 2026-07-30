@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.andre.drinkshop-digest</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/andremusic/drink-shop-planner-site/notify_digest.py</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/andremusic/drink-shop-planner-site</string>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>21</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/andremusic/drink-shop-planner-site/state/digest.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/andremusic/drink-shop-planner-site/state/digest.log</string>
+</dict>
+</plist>
