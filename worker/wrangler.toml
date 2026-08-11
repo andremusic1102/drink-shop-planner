@@ -1,0 +1,14 @@
+name = "drink-shop-planner"
+main = "src/index.js"
+compatibility_date = "2026-07-29"
+
+# app.html 從這裡送出。/api/* 由 worker 先接手（見 src/index.js）。
+[assets]
+directory = "./public"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "drink-shop-planner"
+database_id = "REPLACE_AFTER_CREATE"
