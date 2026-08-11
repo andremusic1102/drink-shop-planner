@@ -259,7 +259,14 @@ export default {
         return json({ error: "server error", detail: String(err) }, 500);
       }
     }
-    // 其餘交給靜態資產（app.html）
+    // 其餘交給靜態資產（app.html）。
+    //
+    // 注意：預設情況下 assets 會在 Worker 之前就直接回應，所以這行對 `/`
+    // 其實不會執行 —— 靜態檔根本進不到這個 handler。曾經在這裡加過「補上
+    // charset header」的程式碼，實測完全沒生效（回應仍是 text/html）。
+    //
+    // 中文亂碼的真正修法是 app.html 檔首的 <meta charset="utf-8">。
+    // 那個缺陷本來就存在，只是 server.py 明寫了 charset header 才沒暴露。
     return env.ASSETS.fetch(request);
   },
 };
