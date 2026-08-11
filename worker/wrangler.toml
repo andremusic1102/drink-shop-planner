@@ -3,9 +3,15 @@ main = "src/index.js"
 compatibility_date = "2026-07-29"
 
 # 不用 workers.dev —— 直接綁自己的網域。
-# 先上 drinkshop-new 驗證；確認無誤後才把正式的 drinkshop.andremusic.dev
-# 從 tunnel ingress 移過來（切換前 Mac mini 那份原封不動，隨時可退回）。
+#
+# 2026-08-11 切換完成：drinkshop.andremusic.dev 原本走 tunnel 到 Mac mini
+# 的 server.py，現在指向這個 Worker。drinkshop-new 留著當測試入口，改動
+# 可以先在那裡驗過再影響正式網址。
 workers_dev = false
+
+[[routes]]
+pattern = "drinkshop.andremusic.dev"
+custom_domain = true
 
 [[routes]]
 pattern = "drinkshop-new.andremusic.dev"
@@ -21,3 +27,16 @@ not_found_handling = "single-page-application"
 binding = "DB"
 database_name = "drink-shop-planner"
 database_id = "e69306ae-0bad-4c19-971b-0e7c1fd944eb"
+
+# 每日摘要：21:00 America/Chicago。Cron 只吃 UTC，而 21:00 當地夏令是
+# 02:00 UTC、冬令是 03:00 UTC —— 兩個都排，程式裡再判斷當地是不是 21 點。
+# 這樣日光節約時間換來換去都不用改設定。
+[triggers]
+crons = ["0 2 * * *", "0 3 * * *"]
+
+[[send_email]]
+name = "DIGEST"
+destination_address = "andremusic1102@gmail.com"
+
+[vars]
+DIGEST_TO = "andremusic1102@gmail.com"

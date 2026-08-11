@@ -249,7 +249,112 @@ async function handleApi(request, env, url) {
   return json({ error: "not found" }, 404);
 }
 
+/* ── 每日摘要 ──────────────────────────────────────────────────────────
+ *
+ * 移植自 notify_digest.py（原本是 launchd 每晚 21:00 跑）。行為保持一致：
+ * **只有當天真的有方案被更新才寄信**，沒有就完全不出聲。
+ *
+ * 時區是這裡唯一麻煩的地方。Cron 一律用 UTC，而 21:00 America/Chicago
+ * 夏令是 02:00 UTC、冬令是 03:00 UTC。所以排兩個時間都醒，醒來先算當地
+ * 幾點，不是 21 點就直接離開 —— 這樣不用管什麼時候換日光節約時間。
+ * meta.digest_last_sent 再保證一天只寄一封。
+ */
+
+const TZ = "America/Chicago";
+// 正式是 21 點。本機測試時用 DIGEST_HOUR 覆寫成當下的小時，才走得到寄信那條路。
+const DEFAULT_DIGEST_HOUR = 21;
+
+/** 回傳當地時間的 {y, m, d, hour} 與 YYYY-MM-DD 字串。 */
+function localParts(date, timeZone = TZ) {
+  const f = new Intl.DateTimeFormat("en-CA", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", hour12: false,
+  });
+  const p = Object.fromEntries(f.formatToParts(date).map((x) => [x.type, x.value]));
+  return { ymd: `${p.year}-${p.month}-${p.day}`, hour: Number(p.hour) };
+}
+
+/** 當地某一天的起點，換算成 epoch 秒。用來篩「今天更新過的」。 */
+function localDayStartEpoch(date, timeZone = TZ) {
+  // 先問這個時區現在偏移多少，再用它把當地零點推回 UTC
+  const asUTC = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+  const asLocal = new Date(date.toLocaleString("en-US", { timeZone }));
+  const offsetMs = asUTC.getTime() - asLocal.getTime();
+  const { ymd } = localParts(date, timeZone);
+  return Math.floor((Date.parse(`${ymd}T00:00:00Z`) + offsetMs) / 1000);
+}
+
+async function runDigest(env, opts = {}) {
+  const nowDate = new Date();
+  const { ymd, hour } = localParts(nowDate);
+  const wantHour = Number(env.DIGEST_HOUR ?? DEFAULT_DIGEST_HOUR);
+
+  if (hour !== wantHour) {
+    return `當地 ${hour} 點，不是 ${wantHour} 點，跳過`;
+  }
+
+  const sent = await env.DB.prepare("SELECT v FROM meta WHERE k = 'digest_last_sent'").first();
+  if (sent && sent.v === ymd) return `${ymd} 已經寄過了`;
+
+  const since = localDayStartEpoch(nowDate);
+  const { results } = await env.DB.prepare(
+    "SELECT name, ts FROM plans WHERE deleted_at IS NULL AND ts >= ? ORDER BY ts DESC"
+  ).bind(since).all();
+
+  // 沒改動就不寄 —— 這是這個功能的重點
+  if (!results || !results.length) {
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO meta (k, v) VALUES ('digest_last_sent', ?)"
+    ).bind(ymd).run();
+    return "今天沒有方案被更新，不寄信";
+  }
+
+  const lines = ["今天有這些飲料店平面方案被更新：", ""];
+  for (const r of results) {
+    const t = new Intl.DateTimeFormat("en-GB", {
+      timeZone: TZ, hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(new Date(r.ts * 1000));
+    lines.push(`· ${r.name}（${t}）`);
+  }
+  lines.push("", "打開查看：https://drinkshop.andremusic.dev");
+
+  await sendMail(env, `飲料店平面 · 今日更新 ${results.length} 份方案`, lines.join("\n"));
+  await env.DB.prepare(
+    "INSERT OR REPLACE INTO meta (k, v) VALUES ('digest_last_sent', ?)"
+  ).bind(ymd).run();
+  return `已寄出：${results.length} 份方案`;
+}
+
+/** 用 Cloudflare Email Routing 寄信。
+ *
+ * 手刻 MIME 有兩個地雷：
+ *  - 主旨含中文，必須用 RFC 2047 的 =?UTF-8?B?…?= 編碼，否則會變亂碼
+ *  - **一定要有 Message-ID**，少了 Cloudflare 直接擋 `invalid message-id`
+ */
+async function sendMail(env, subject, body) {
+  const { EmailMessage } = await import("cloudflare:email");
+  const from = "drinkshop@andremusic.dev";
+  const b64 = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s)));
+  const rand = crypto.randomUUID();
+  const raw =
+    `From: ${from}\r\n` +
+    `To: ${env.DIGEST_TO}\r\n` +
+    `Message-ID: <${rand}@andremusic.dev>\r\n` +
+    `Date: ${new Date().toUTCString()}\r\n` +
+    `Subject: =?UTF-8?B?${b64(subject)}?=\r\n` +
+    `MIME-Version: 1.0\r\n` +
+    `Content-Type: text/plain; charset=UTF-8\r\n` +
+    `Content-Transfer-Encoding: base64\r\n\r\n` +
+    b64(body).replace(/(.{76})/g, "$1\r\n");
+  await env.DIGEST.send(new EmailMessage(from, env.DIGEST_TO, raw));
+}
+
 export default {
+  async scheduled(event, env, ctx) {
+    const msg = await runDigest(env);
+    console.log("digest:", msg);
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (url.pathname.startsWith("/api/")) {
