@@ -1,3 +1,9 @@
 state/
 *.log
 .DS_Store
+
+# wrangler 本機狀態與產生物
+worker/.wrangler/
+worker/node_modules/
+worker/seed.sql
+worker/public/
