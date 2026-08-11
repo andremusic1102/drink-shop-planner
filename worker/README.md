@@ -57,10 +57,35 @@ npx wrangler d1 execute drink-shop-planner --remote --file=seed.sql
 npx wrangler deploy
 ```
 
-部署後先用 `*.workers.dev` 網址驗過，**再**把 `drinkshop.andremusic.dev` 從 tunnel ingress 移到 Worker。切換前不要動 Mac mini 上那份，隨時可以退回去。
+改動先部署到 `drinkshop-new.andremusic.dev` 驗過，再影響正式的 `drinkshop.andremusic.dev`。兩個 hostname 指向同一個 Worker。
 
 ## 切過去之後
 
-`com.andre.drinkshop` 與 `com.andre.drinkshop-digest` 這兩個 launchd 服務就可以停掉了。digest 改用 Cron Trigger（尚未實作）。
+**2026-08-11 已完成切換。** `com.andre.drinkshop` 與 `com.andre.drinkshop-digest` 兩個 launchd 服務已移除，digest 改用 Cron Trigger（見下）。
 
-`state/` 底下的檔案要留著——那是搬遷前的最後快照。
+`state/` 底下的檔案留著當搬遷前的最後快照。
+
+## 每日摘要（Cron Trigger）
+
+移植自 `../notify_digest.py`。**只有當天真的有方案被更新才寄信**，沒有就完全不出聲。
+
+寄件走 Cloudflare Email Routing 的 `send_email` binding（免費，不用第三方寄信服務）。
+
+### 時區
+
+Cron 只吃 UTC，而 21:00 America/Chicago 夏令是 02:00 UTC、冬令是 03:00 UTC。所以**兩個時間都排**，程式裡再判斷當地是不是 21 點，不是就直接離開。這樣日光節約時間換來換去都不用改設定。`meta.digest_last_sent` 保證一天只寄一封。
+
+### 兩個踩過的坑
+
+**Cron Triggers 要求帳號先註冊 workers.dev 子網域**，否則 API 回 `code=10063`。已註冊 `andremusic.workers.dev`，但 `workers_dev = false` 仍然有效——實測那個網址回 HTTP 000，服務只走自己的網域。
+
+**手刻 MIME 一定要有 `Message-ID`**，少了 Cloudflare 直接擋 `invalid message-id`。主旨含中文要用 RFC 2047 的 `=?UTF-8?B?…?=` 編碼。
+
+### 本機測試
+
+```bash
+npx wrangler dev --local --test-scheduled --var DIGEST_HOUR:$(TZ=America/Chicago date +%-H)
+curl http://127.0.0.1:8799/__scheduled
+```
+
+`DIGEST_HOUR` 覆寫掉 21 點的限制，才走得到寄信那條路徑。信會落在 `.wrangler/tmp/email/` 底下的 `.eml` 檔，可以直接檢查編碼。

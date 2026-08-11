@@ -27,3 +27,11 @@ CREATE TABLE IF NOT EXISTS revisions (
 
 -- 修剪舊版本時要按 plan_id 找最舊的幾筆
 CREATE INDEX IF NOT EXISTS revisions_by_plan ON revisions (plan_id, rev DESC);
+
+-- 雜項狀態。目前只放 digest_last_sent（值是 America/Chicago 的 YYYY-MM-DD），
+-- 對應原本 server.py 那邊的 state/last_digest.json。
+-- Cron 一天會醒兩次（夏令/冬令各一），靠這個確保一天只寄一封。
+CREATE TABLE IF NOT EXISTS meta (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL
+);
