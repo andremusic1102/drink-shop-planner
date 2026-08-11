@@ -2,6 +2,15 @@ name = "drink-shop-planner"
 main = "src/index.js"
 compatibility_date = "2026-07-29"
 
+# 不用 workers.dev —— 直接綁自己的網域。
+# 先上 drinkshop-new 驗證；確認無誤後才把正式的 drinkshop.andremusic.dev
+# 從 tunnel ingress 移過來（切換前 Mac mini 那份原封不動，隨時可退回）。
+workers_dev = false
+
+[[routes]]
+pattern = "drinkshop-new.andremusic.dev"
+custom_domain = true
+
 # app.html 從這裡送出。/api/* 由 worker 先接手（見 src/index.js）。
 [assets]
 directory = "./public"
@@ -11,4 +20,4 @@ not_found_handling = "single-page-application"
 [[d1_databases]]
 binding = "DB"
 database_name = "drink-shop-planner"
-database_id = "REPLACE_AFTER_CREATE"
+database_id = "e69306ae-0bad-4c19-971b-0e7c1fd944eb"
