@@ -1,0 +1,5 @@
+{
+  "_comment": "verify_gate.py 的 per-repo 設定。這個 repo 兩個生態：根目錄的 server.py（pytest）與 worker/（node --test）。閘只會自動找到根目錄的 pytest，所以把 worker 串進來明寫。",
+  "_why": "&& 串接不是純 pytest 形態，閘不縮窄子集、每次 Stop 兩邊全跑；兩邊都是秒級（2026-09-13 實測見 claude-config docs/test-gate-coverage-2026-09.md）。",
+  "test": "python3 -m pytest -q && cd worker && npm test --silent"
+}
