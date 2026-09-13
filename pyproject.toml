@@ -1,0 +1,10 @@
+[project]
+name = "drink-shop-planner"
+version = "0.1.0"
+description = "飲料店平面規劃：server.py（本機 stdlib 後端）與 worker/（Cloudflare Workers 版）"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--tb=short"

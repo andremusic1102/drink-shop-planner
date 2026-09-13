@@ -1,0 +1,10 @@
+{
+  "name": "drink-shop-planner-worker",
+  "private": true,
+  "type": "module",
+  "description": "drink-shop-planner 的 Cloudflare Workers 後端（src/index.js）。零依賴；測試用 node --test 直接呼叫 fetch handler，D1／ASSETS 用假物件。",
+  "scripts": {
+    "test": "node --test",
+    "deploy": "wrangler deploy"
+  }
+}
