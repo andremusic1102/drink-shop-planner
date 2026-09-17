@@ -40,3 +40,6 @@ Cloudflare 帳號與部署細節見 claude-config `notes/memory notes/cloudflare
 所以 wrangler 指令要逐條覆寫帳號。
 
 `state/` 已 gitignore。
+
+🔴 **`worker/public/` 也是 gitignore 的產生物**：前端原始檔是根目錄的 `app.html`，
+共用的純函式在 `worker/src/`（`rules.js` 等）。改 `worker/public/*` 等於改在垃圾桶裡。
