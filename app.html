@@ -244,7 +244,7 @@ function toast(msg){ const t=document.getElementById('__toast'); t.textContent=m
   clearTimeout(t.__h); t.__h=setTimeout(()=>t.style.opacity='0',3400); }
 
 // ===== 編輯結構模式：開著只能動結構元件、關著只能動設備（draggableSet 是唯一判準）=====
-let structMode=false, selEl=null, structDirty=null, structPushing=false;
+let structMode=false, selEl=null, structDirty=null, structPushing=false, structPending=false;
 const mode=()=>structMode?'structure':'items';
 function setStructMode(on){ structMode=!!on; sel=null; selEl=null; mp=null;
   $('#structMode').checked=structMode; document.body.classList.toggle('structon',structMode); plan.classList.toggle('structmode',structMode); render(); }
@@ -256,13 +256,15 @@ function delElement(){ if(!selEl)return; const e=elements.find(x=>x.id===selEl);
   elements=elements.filter(x=>x.id!==selEl); selEl=null; saveStructure(); render(); }
 // 結構獨立存：自己的 rev、自己的 409。跟方案的同步互不干擾。
 function saveStructure(){ clearTimeout(structDirty); structDirty=setTimeout(pushStructure,600); }
-async function pushStructure(){ if(structPushing)return; structPushing=true;
+// 送出中又改了：記 pending，這一筆送完再用最新的 elements 補送一次，最後一次改動不會丟。
+async function pushStructure(){ if(structPushing){ structPending=true; return; } structPushing=true; structPending=false;
   try{ const r=await fetch('/api/structure',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({structure:{elements},baseRev:structRev})});
-    if(r.status===409){ const o=await r.json(); elements=o.structure.elements; structRev=o.rev; toast('建築結構被別人同時改了，已載入最新版，請重做剛才的結構調整'); render(); }
+    if(r.status===409){ const o=await r.json(); elements=o.structure.elements; structRev=o.rev; structPending=false; toast('建築結構被別人同時改了，已載入最新版，請重做剛才的結構調整'); render(); }
     else if(r.ok){ const o=await r.json(); structRev=o.rev; }
     else { toast('結構儲存失敗（HTTP '+r.status+'）'); }
   }catch(e){ toast('結構儲存失敗：離線'); }
-  structPushing=false; }
+  structPushing=false;
+  if(structPending) pushStructure(); }
 const DEFAULT=[
   {n:'工作台2(含水槽)',c:'counter',w:78,d:196,x:1215,y:100,h:123},
   {n:'出餐檯',c:'counter',w:93,d:61,x:1200,y:300,h:80},
