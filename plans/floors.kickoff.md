@@ -23,8 +23,7 @@ generated: 2026-09-17T11:05:00
   · 父母正在用正式站；D6 deploy 前先本機 miniflare 開舊方案，deploy 後立刻在 drinkshop-new 開舊方案驗。
   · vault 路徑在 iCloud，Bash 指令文字出現會被 path_guard 擋；讀寫 vault 用 Read／Write。
 
-單元序列：
-  U2: D1 規則引擎三條新規則（rules.js 已由 test-fixer 改到新簽名，此單元收尾：測試名對齊、DEFAULT_STRUCTURE、package.json build script）
+單元序列（D1 已由 U2 驗收 passed，2026-09-17；從 U3 開始）：
   U3: D2 結構 API（GET/PUT /api/structure、history、restore；/api/plans 過濾 structure）
   U4: D3 前端樓層＋投影（curFloor、tab、cur()、projection、floors.js、量測線帶 floor）
   U5: D4 前端結構模式＋紅框（structMode、＋梁／廁所／樓梯、draggableSet、shrineViolations 紅框）
