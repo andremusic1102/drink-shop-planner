@@ -20,7 +20,13 @@
  * 垃圾桶改成 deleted_at 軟刪除，不再搬檔案。
  */
 
+import { DEFAULT_STRUCTURE } from "./rules.js";
+
 const KEEP_REVISIONS = 50;
+
+// 建築結構（梁／樓梯／廁所／玄關）全部方案共用一份，存在 plans 表的保留列。
+// 它的 id 不是 hex，所以 /api/plans/{id} 那組路由碰不到它；列表也要濾掉。
+const STRUCTURE_ID = "structure";
 const PLAN_W = 1300;
 const PLAN_H = 375;
 
@@ -119,12 +125,16 @@ async function handleApi(request, env, url) {
   const path = url.pathname;
   const method = request.method;
 
-  // GET /api/plans —— 列表
+  // GET /api/plans —— 列表（不含建築結構那一列）
   if (path === "/api/plans" && method === "GET") {
     const { results } = await db.prepare(
-      "SELECT id, name, rev, ts AS updatedAt FROM plans WHERE deleted_at IS NULL ORDER BY ts DESC"
-    ).all();
-    return json(results || []);
+      "SELECT id, name, rev, ts AS updatedAt FROM plans WHERE deleted_at IS NULL AND id <> ? ORDER BY ts DESC"
+    ).bind(STRUCTURE_ID).all();
+    return json((results || []).filter((r) => r.id !== STRUCTURE_ID));
+  }
+
+  if (path === "/api/structure" || path === "/api/structure/history" || path === "/api/structure/restore") {
+    return handleStructure(request, db, path, method);
   }
 
   // POST /api/plans —— 新增
@@ -244,6 +254,103 @@ async function handleApi(request, env, url) {
     const newRev = row.rev + 1;
     await writeRevision(db, id, newRev, ts, bak.plan);
     return json({ ok: true, rev: newRev });
+  }
+
+  return json({ error: "not found" }, 404);
+}
+
+/* ── 建築結構 ──────────────────────────────────────────────────────────
+ *
+ * 一棟房子只有一份：梁、樓梯、廁所、玄關。存在 plans 表 id='structure' 那列，
+ * plan 欄放 {elements:[...]}，所以 rev／409／revisions／restore 全部沿用方案那套。
+ * 沒有那一列（還沒人改過結構）時 GET 回 rules.js 的 DEFAULT_STRUCTURE、rev 0；
+ * 第一次 PUT 帶 baseRev 0 就 INSERT。
+ */
+function structureOf(row) {
+  if (!row) return { rev: 0, elements: DEFAULT_STRUCTURE, updatedAt: null };
+  let elements = [];
+  try { elements = JSON.parse(row.plan).elements || []; } catch { /* 壞掉當空 */ }
+  return { rev: row.rev, elements, updatedAt: row.ts };
+}
+
+function normalizeElements(body) {
+  const src = body && body.structure && Array.isArray(body.structure.elements) ? body.structure.elements : null;
+  if (!src) return null;
+  return src.map((e) => ({
+    id: String(e.id || ""),
+    kind: String(e.kind || ""),
+    floor: Number(e.floor) || 1,
+    name: String(e.name || ""),
+    x: Number(e.x) || 0, y: Number(e.y) || 0, w: Number(e.w) || 0, d: Number(e.d) || 0,
+  }));
+}
+
+async function handleStructure(request, db, path, method) {
+  const id = STRUCTURE_ID;
+  const sub = path.slice("/api/structure".length);
+
+  if (method === "GET" && sub === "") {
+    return json(structureOf(await getPlan(db, id)));
+  }
+
+  if (method === "GET" && sub === "/history") {
+    const { results } = await db.prepare(
+      "SELECT rev, ts FROM revisions WHERE plan_id = ? ORDER BY rev DESC"
+    ).bind(id).all();
+    return json(results || []);
+  }
+
+  if (method === "PUT" && sub === "") {
+    const body = await readBody(request);
+    const base = Number(body.baseRev ?? -1);
+    const elements = normalizeElements(body);
+    if (!elements) return json({ error: "structure.elements must be an array" }, 400);
+    const planText = JSON.stringify({ elements });
+    const ts = now();
+
+    if (base === 0) {
+      // 還沒有那一列：建它。INSERT OR IGNORE 讓兩個「第一次」只有一個成功，
+      // 輸的那個 changes 為 0，走下面的 409。
+      const ins = await db.prepare(
+        "INSERT OR IGNORE INTO plans (id, name, rev, ts, plan) VALUES (?, '建築結構', 1, ?, ?)"
+      ).bind(id, ts, planText).run();
+      if (ins.meta.changes) {
+        await writeRevision(db, id, 1, ts, planText);
+        return json({ ok: true, rev: 1 });
+      }
+    } else {
+      const res = await db.prepare(
+        `UPDATE plans SET rev = rev + 1, ts = ?, plan = ?
+           WHERE id = ? AND rev = ? AND deleted_at IS NULL`
+      ).bind(ts, planText, id, base).run();
+      if (res.meta.changes) {
+        await writeRevision(db, id, base + 1, ts, planText);
+        return json({ ok: true, rev: base + 1 });
+      }
+    }
+    const cur = structureOf(await getPlan(db, id));
+    return json({ ok: false, rev: cur.rev, structure: { elements: cur.elements } }, 409);
+  }
+
+  if (method === "POST" && sub === "/restore") {
+    const body = await readBody(request);
+    const row = await getPlan(db, id);
+    if (!row) return json({ error: "not found" }, 404);
+    const bak = await db.prepare(
+      "SELECT plan FROM revisions WHERE plan_id = ? AND rev = ?"
+    ).bind(id, body.rev).first();
+    if (!bak) return json({ error: "no such version" }, 404);
+    const ts = now();
+    const res = await db.prepare(
+      `UPDATE plans SET rev = rev + 1, ts = ?, plan = ?
+         WHERE id = ? AND rev = ? AND deleted_at IS NULL`
+    ).bind(ts, bak.plan, id, row.rev).run();
+    if (!res.meta.changes) {
+      const fresh = await getPlan(db, id);
+      return json({ ok: false, rev: fresh ? fresh.rev : row.rev }, 409);
+    }
+    await writeRevision(db, id, row.rev + 1, ts, bak.plan);
+    return json({ ok: true, rev: row.rev + 1 });
   }
 
   return json({ error: "not found" }, 404);
