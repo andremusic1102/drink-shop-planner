@@ -72,3 +72,14 @@ Playwright 對 drinkshop-new，方案「洗手台工作台未定」：
 ```
 
 是估的，Andre 在編輯器結構模式拖正。梁2 壓到「洗手台工作台未定」的神明桌（x 650–717）→ 該方案神明桌現在兩條違規（facing＋beam）。
+
+## 第四次 deploy（kind 限四種＋縮圖屬性跳脫，U11）＋一次誤寫與回復
+
+`Current Version ID: aa6f790a-d095-4823-b4f6-bb27740220ba`。
+
+deploy 後我立刻用 `PUT baseRev 6` 送壞 kind 驗證——**錯誤**：新版還沒傳到邊緣，舊版接受了，
+而且 body 是整份 elements，把正式站結構換成只剩那個壞元件（rev 7）。
+立刻 `POST /api/structure/restore {rev:6}` → rev 8，讀回 6 個元件（三殼＋三梁）完整。
+20 秒後再驗，改用 `baseRev 0`（就算沒擋也只會 409、不會覆寫）：三次都 400，rev 仍 8。
+
+教訓：deploy 後的驗證請求必須是不可能寫入成功的（舊 baseRev／唯讀端點），不能拿正式資料當靶。
