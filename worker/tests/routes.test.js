@@ -127,6 +127,20 @@ test("PUT /api/structure elements 裡有 null 或非物件 → 400，不是 500"
   }
 });
 
+test("PUT /api/structure kind 不在允許集合 → 400", async () => {
+  const el = (kind) => ({ id: "x", kind, floor: 1, name: "n", x: 0, y: 0, w: 1, d: 1 });
+  const e = env([]);
+  const res = await worker.fetch(putStructure({ structure: { elements: [el('x"><script>')] }, baseRev: 0 }), e, {});
+  assert.equal(res.status, 400);
+  assert.equal(e.DB.calls.length, 0, "壞的 kind 不碰資料庫");
+
+  // 正常的四種之一要能過：走到 INSERT、200
+  const ok = env([]);
+  const res2 = await worker.fetch(putStructure({ structure: { elements: [el("stairs")] }, baseRev: 0 }), ok, {});
+  assert.equal(res2.status, 200);
+  assert.ok(ok.DB.calls.some((c) => /INSERT OR IGNORE INTO plans/.test(c.sql) && c.args[0] === "structure"));
+});
+
 test("GET /api/plans 不含 structure", async () => {
   const e = env([
     { id: "structure", name: "建築結構", rev: 2, updatedAt: 9 },
@@ -179,6 +193,27 @@ test("縮圖畫出 structure 列的梁", async () => {
   assert.ok(svg.includes('data-kind="beam"') && svg.includes('fill="url(#beam)"'), "梁畫成斜線");
   assert.ok(!svg.includes('data-kind="bath"'), "2F 的廁所不畫、預設殼也不再出現");
   assert.ok(e.DB.calls.some((c) => /FROM plans/.test(c.sql) && c.args[0] === "structure"), "有去讀 structure 列");
+});
+
+test("縮圖對 kind／name 做 XML 跳脫，不會跳出屬性", async () => {
+  // 模擬 D1 裡已有的舊資料（kind 檢查上線前寫入）：name 帶注入字串、kind 含引號
+  const structure = { id: "structure", name: "建築結構", rev: 3, ts: 2, plan: JSON.stringify({ elements: [
+    { id: "b1", kind: "beam", floor: 1, name: '梁"><script>alert(1)</script>', x: 0, y: 150, w: 1300, d: 30 },
+    { id: "b2", kind: 'bath"><script>alert(2)</script><rect a="', floor: 1, name: "舊廁所", x: 600, y: 100, w: 140, d: 200 },
+  ] }) };
+  const e = env([], { byId: { ab12cd: planRow([]), structure } });
+  const res = await worker.fetch(req("/api/plans/ab12cd/thumb.svg"), e, {});
+  assert.equal(res.status, 200);
+  const svg = await res.text();
+  assert.ok(!svg.includes("<script"), "沒有原樣的 <script");
+  assert.ok(svg.includes("&quot;") || svg.includes("&lt;"), "引號／角括號被跳脫成實體");
+  // 整串比對屬性值：合法 SVG 本來就有 `"><`（例如 viewBox="…"><defs>），
+  // 所以不能用「不含 "><」判，改成直接斷言 data-kind 的值被跳脫成什麼。
+  const kinds = [...svg.matchAll(/<rect data-kind="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(kinds, [
+    "beam",
+    "bath&quot;&gt;&lt;script&gt;alert(2)&lt;/script&gt;&lt;rect a=&quot;",
+  ], "兩個 1F 元件都畫了，且 kind 完整留在屬性內");
 });
 
 test("/api/plans/structure 走不到方案路由（id 不是 hex）", async () => {
