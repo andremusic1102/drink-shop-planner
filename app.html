@@ -331,7 +331,7 @@ function render(){
   if(bad.size){ const hot=new Set(); bad.forEach((list,shrineId)=>{ hot.add(String(shrineId)); list.forEach(v=>{ if(v.elementId!=null)hot.add(String(v.elementId)); }); });
     plan.querySelectorAll('.proj,.fx').forEach(p=>{ const k=p.dataset.ref!=null?p.dataset.ref:p.dataset.eid; if(k!=null&&hot.has(String(k)))p.classList.add('bad'); }); }
   cur().forEach(it=>{ if(it.hidden)return;
-    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' shrinebad':'');
+    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' bad shrinebad':'');
     const pxW=it.w*scale, pxH=it.d*scale;
     if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
