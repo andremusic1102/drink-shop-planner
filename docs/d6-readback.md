@@ -46,7 +46,8 @@ id 清單不含 `structure`（列表路由 SQL 與 JS 兩層過濾）。
 
 ## 第二次 deploy（`.it.bad` class 修正）＋在正式站實際加梁、存、重載、刪
 
-`Current Version ID: 7e147e71-4288-404a-baee-cd30dac22e9c`；第三次（面板文字）`636cb23d-024b-4221-869d-74216a1a3e0a`。
+第二次 deploy：`Current Version ID: 7e147e71-4288-404a-baee-cd30dac22e9c`，`git rev-parse HEAD` = `97f39c62b743dff1d77f76584c2e2e43274da787`。
+第三次 deploy（面板違規文字去重）：`636cb23d-024b-4221-869d-74216a1a3e0a`，當時該改動尚未 commit，之後併入 `442f714b3376dd3ff413b98ffdff4b10dfe7ee79`（app.html 與部署版一致）。
 
 Playwright 對 drinkshop-new，方案「洗手台工作台未定」：
 
