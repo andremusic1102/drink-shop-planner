@@ -21,7 +21,7 @@ test("空地且 rot=0 → 0 筆", () => {
 
 test("擺在梁下 → 1 筆 beam", () => {
   const v = shrineViolations([shrine(300, 125)], [...STRUCT, beam(0, 150, 1300, 30)]);
-  assert.deepEqual(v, [{ rule: "beam", floor: 1, name: "梁A", shrineId: 1 }]);
+  assert.deepEqual(v, [{ rule: "beam", floor: 1, name: "梁A", shrineId: 1, elementId: "b1" }]);
 });
 
 test("梁不從方案 items 讀：items 裡的 c:'beam' 不算", () => {
@@ -31,7 +31,7 @@ test("梁不從方案 items 讀：items 裡的 c:'beam' 不算", () => {
 
 test("正上一層廁所下 → 1 筆 bath", () => {
   const v = shrineViolations([shrine(620, 125)], STRUCT);
-  assert.deepEqual(v, [{ rule: "bath", floor: 2, name: "廁所 2F", shrineId: 1 }]);
+  assert.deepEqual(v, [{ rule: "bath", floor: 2, name: "廁所 2F", shrineId: 1, elementId: "bath-2" }]);
 });
 
 test("隔兩層的廁所不算", () => {
@@ -39,7 +39,7 @@ test("隔兩層的廁所不算", () => {
   assert.deepEqual(shrineViolations([shrine(920, 125)], STRUCT), []);
   // 同時壓到 2F 與 3F 廁所投影 → 只有 2F 那一筆
   const wide = { ...shrine(600, 125), w: 500 };
-  assert.deepEqual(shrineViolations([wide], STRUCT), [{ rule: "bath", floor: 2, name: "廁所 2F", shrineId: 1 }]);
+  assert.deepEqual(shrineViolations([wide], STRUCT), [{ rule: "bath", floor: 2, name: "廁所 2F", shrineId: 1, elementId: "bath-2" }]);
 });
 
 test("同層廁所不算（1F 廁所在 1F 神明桌旁邊不投影）", () => {
@@ -53,7 +53,7 @@ test("梁在別的樓層不算：2F 的梁不影響 1F 神明桌", () => {
 
 test("神明桌在 2F：只看 3F 廁所，1F 梁與 2F 廁所不算", () => {
   const v = shrineViolations([shrine(920, 125, { floor: 2 })], [...STRUCT, beam(0, 150, 1300, 30)]);
-  assert.deepEqual(v, [{ rule: "bath", floor: 3, name: "廁所 3F", shrineId: 1 }]);
+  assert.deepEqual(v, [{ rule: "bath", floor: 3, name: "廁所 3F", shrineId: 1, elementId: "bath-3" }]);
   const v2 = shrineViolations([shrine(620, 125, { floor: 2 })], STRUCT);
   assert.deepEqual(v2, []);
 });
@@ -85,7 +85,7 @@ test("多張神明桌各算各的，帶各自 shrineId", () => {
   const b = shrine(300, 125, { id: "s2", rot: 90 });
   const v = shrineViolations([a, b], STRUCT);
   assert.deepEqual(v, [
-    { rule: "bath", floor: 2, name: "廁所 2F", shrineId: "s1" },
+    { rule: "bath", floor: 2, name: "廁所 2F", shrineId: "s1", elementId: "bath-2" },
     { rule: "facing", floor: 1, name: "神明桌", shrineId: "s2" },
   ]);
 });

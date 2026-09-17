@@ -43,5 +43,13 @@ export function projection(elements, items, floor) {
   return out;
 }
 
+/**
+ * 這一刻能被拖的東西。「編輯結構」開關開著（mode==='structure'）只有當層的結構元件能動，
+ * 關著只有當層的設備能動——兩種東西永遠不會同時可拖（2026-09-17 定案：避免排設備時誤碰梁）。
+ */
+export function draggableSet(mode, items, elements, floor) {
+  return mode === "structure" ? elementsOn(elements, floor) : cur(items, floor);
+}
+
 /** 結構元件種類的中文名（畫標籤用）。 */
 export const KIND_LABEL = { beam: "梁", stairs: "樓梯", bath: "廁所", entry: "玄關" };

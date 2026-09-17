@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { cur, elementsOn, projection, FLOORS } from "../src/floors.js";
+import { cur, elementsOn, projection, draggableSet, FLOORS } from "../src/floors.js";
 
 const items = [
   { id: 1, n: "冰箱", c: "cold", x: 10, y: 10, w: 60, d: 60 },                 // floor 缺 → 1F
@@ -57,6 +57,19 @@ test("投影：在 3F 含 1F 與 2F 的神明桌，帶各自樓層", () => {
 test("投影每筆帶 ref 指回原物件（前端亮紅框用）", () => {
   const p = projection(elements, items, 1);
   assert.equal(p.find((x) => x.name === "廁所 2F").ref, elements[1]);
+});
+
+test("結構模式開著：可拖集合只含結構元件", () => {
+  const d = draggableSet("structure", items, elements, 1);
+  assert.deepEqual(d.map((e) => e.id), ["bath-1"]);
+  assert.ok(!d.some((e) => e.c), "沒有任何設備混進來");
+});
+
+test("結構模式關著：可拖集合只含設備", () => {
+  const d = draggableSet("items", items, elements, 1);
+  assert.deepEqual(d.map((i) => i.id), [1, 2, 5]);
+  assert.ok(!d.some((e) => e.kind), "沒有任何結構元件混進來");
+  assert.deepEqual(draggableSet(undefined, items, elements, 2).map((i) => i.id), [3, 4], "mode 缺＝設備模式");
 });
 
 test("FLOORS 是 1–4", () => {
