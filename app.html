@@ -318,7 +318,7 @@ function renderProjection(){ [...plan.querySelectorAll('.proj')].forEach(e=>e.re
     place(d,p.x,p.y,p.w,p.d); d.textContent=p.floor+'F '+p.name; d.dataset.floor=p.floor; if(p.ref&&p.ref.id!=null)d.dataset.ref=p.ref.id; plan.appendChild(d); }); }
 // 神明桌限制（CONTEXT.md）：全部樓層一起算，回 Map<shrineId, 違規清單>
 function violations(){ const m=new Map(); shrineViolations(items,elements).forEach(v=>{ if(!m.has(v.shrineId))m.set(v.shrineId,[]); m.get(v.shrineId).push(v); }); return m; }
-function ruleText(v){ return v.rule==='beam'?'在 '+v.floor+'F 的「'+esc(v.name)+'」下方':v.rule==='bath'?'正上方 '+v.floor+'F 是「'+esc(v.name)+'」':'正面沒有朝門口（圖的右邊）'; }
+function ruleText(v){ return v.rule==='beam'?'在 '+v.floor+'F 的「'+esc(v.name)+'」下方':v.rule==='bath'?'正上方 '+v.floor+'F 是「'+esc(v.name)+'」':v.floor+'F 的「'+esc(v.name)+'」正面沒有朝門口（圖的右邊）'; }
 function render(){
   [...plan.querySelectorAll('.it,.fx,.gap,.gapln,#measLayer')].forEach(e=>e.remove());
   const draggable=new Set(draggableSet(mode(),items,elements,curFloor));
@@ -439,9 +439,10 @@ function updateSelEl(){ const s=elements.find(x=>x.id===selEl);
     '<div class="kv">長 '+num('ew',s.w)+' 寬 '+num('ed',s.d)+' cm</div>'+
     '<div class="rowbtn"><button class="warn" id="edel">刪除這個結構元件</button></div>'+
     '<div class="kv" style="color:var(--sub)">全部方案共用；改完自動存</div>';
-  const bind=(id,k,min)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const v=k==='name'?el.value.trim():Math.max(min,+el.value||0); s[k]=v;
+  // 尺寸不能超過圖框（不然位置夾限會算出負範圍、拖不動）
+  const bind=(id,k,min,max)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const v=k==='name'?el.value.trim():Math.min(max,Math.max(min,+el.value||0)); s[k]=v;
     if(k!=='name'){ s.x=Math.max(0,Math.min(PLAN_W-s.w,s.x)); s.y=Math.max(0,Math.min(PLAN_H-s.d,s.y)); } saveStructure(); render(); }; };
-  bind('en','name',0); bind('ex','x',0); bind('ey','y',0); bind('ew','w',5); bind('ed','d',5);
+  bind('en','name',0,0); bind('ex','x',0,PLAN_W); bind('ey','y',0,PLAN_H); bind('ew','w',5,PLAN_W); bind('ed','d',5,PLAN_H);
   const db=$('#edel'); if(db)db.onclick=delElement; }
 
 function rotate(){ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
