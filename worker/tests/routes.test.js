@@ -8,12 +8,13 @@ import worker from "../src/index.js";
 
 // 最小的 D1 假物件：記下每一句 SQL，回固定結果。
 // changes 模擬條件式 UPDATE／INSERT OR IGNORE 改到幾列（0 = 樂觀鎖衝突）。
-function fakeDb(rows = [], { changes = 1 } = {}) {
+// byId：first() 依 bind 的第一個參數挑列（一條路由要讀兩列時用，例如縮圖讀方案＋結構）。
+function fakeDb(rows = [], { changes = 1, byId = null } = {}) {
   const calls = [];
-  const stmt = (sql) => ({
-    bind: (...args) => { calls.push({ sql, args }); return stmt(sql); },
+  const stmt = (sql, args = []) => ({
+    bind: (...a) => { calls.push({ sql, args: a }); return stmt(sql, a); },
     all: async () => ({ results: rows }),
-    first: async () => rows[0] ?? null,
+    first: async () => (byId && args[0] in byId) ? byId[args[0]] : (byId ? null : (rows[0] ?? null)),
     run: async () => ({ meta: { changes } }),
   });
   return { calls, prepare: (sql) => { calls.push({ sql, args: [] }); return stmt(sql); } };
@@ -146,6 +147,38 @@ test("GET /api/structure/history 走 revisions 表", async () => {
 test("POST /api/structure/restore 沒有那一列 → 404", async () => {
   const res = await worker.fetch(req("/api/structure/restore", { method: "POST", body: JSON.stringify({ rev: 1 }) }), env([]), {});
   assert.equal(res.status, 404);
+});
+
+// ── 縮圖 ──────────────────────────────────────────────────────────────
+
+const planRow = (items) => ({ id: "ab12cd", name: "測試", rev: 1, ts: 1, plan: JSON.stringify({ items, measures: [] }) });
+
+test("縮圖不含 floor=2 的 item", async () => {
+  const items = [
+    { id: 1, n: "冰箱", c: "cold", x: 10, y: 10, w: 60, d: 60 },
+    { id: 2, n: "床", c: "shelf", floor: 2, x: 900, y: 150, w: 150, d: 200 },
+  ];
+  const e = env([], { byId: { ab12cd: planRow(items) } });
+  const res = await worker.fetch(req("/api/plans/ab12cd/thumb.svg"), e, {});
+  assert.equal(res.status, 200);
+  const svg = await res.text();
+  const n = (v) => (v * 260 / 1300).toFixed(1);
+  assert.ok(svg.includes(`x="${n(10)}"`), "1F 冰箱有畫");
+  assert.ok(!svg.includes(`x="${n(900)}"`), "2F 的床不畫");
+  assert.ok(svg.includes('data-kind="bath"'), "沒有 structure 列時用預設 1F 三個殼");
+});
+
+test("縮圖畫出 structure 列的梁", async () => {
+  const structure = { id: "structure", name: "建築結構", rev: 3, ts: 2, plan: JSON.stringify({ elements: [
+    { id: "b1", kind: "beam", floor: 1, name: "梁A", x: 0, y: 150, w: 1300, d: 30 },
+    { id: "b2", kind: "bath", floor: 2, name: "2F 廁所", x: 600, y: 100, w: 140, d: 200 },
+  ] }) };
+  const e = env([], { byId: { ab12cd: planRow([]), structure } });
+  const res = await worker.fetch(req("/api/plans/ab12cd/thumb.svg"), e, {});
+  const svg = await res.text();
+  assert.ok(svg.includes('data-kind="beam"') && svg.includes('fill="url(#beam)"'), "梁畫成斜線");
+  assert.ok(!svg.includes('data-kind="bath"'), "2F 的廁所不畫、預設殼也不再出現");
+  assert.ok(e.DB.calls.some((c) => /FROM plans/.test(c.sql) && c.args[0] === "structure"), "有去讀 structure 列");
 });
 
 test("/api/plans/structure 走不到方案路由（id 不是 hex）", async () => {

@@ -20,7 +20,7 @@
  * 垃圾桶改成 deleted_at 軟刪除，不再搬檔案。
  */
 
-import { DEFAULT_STRUCTURE } from "./rules.js";
+import { DEFAULT_STRUCTURE, floorOf } from "./rules.js";
 
 const KEEP_REVISIONS = 50;
 
@@ -38,12 +38,6 @@ const CAT_STROKE = {
   counter: "#2f6f63", cold: "#4a86a6", water: "#2f8f8a", heat: "#c47a3a",
   seal: "#7a5fb0", shrine: "#a5842f", shelf: "#6b7a7a",
 };
-// 固定的樓層結構（玄關 / 樓梯 / 廁所），縮圖用
-const SHELL = [
-  [1125, 0, 175, 100],
-  [858, 0, 267, 100],
-  [137, 106, 140, 269],
-];
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
@@ -82,8 +76,10 @@ async function writeRevision(db, planId, rev, ts, planText) {
   ).bind(planId, KEEP_REVISIONS).run();
 }
 
-function thumbSvg(plan) {
-  const items = (plan && plan.items) || [];
+// 方案列表的縮圖：只畫 1F（floor 缺＝1）。結構元件從共用的 structure 列來，梁畫斜線。
+function thumbSvg(plan, elements = DEFAULT_STRUCTURE) {
+  const items = ((plan && plan.items) || []).filter((it) => floorOf(it) === 1);
+  const els = (Array.isArray(elements) ? elements : []).filter((e) => floorOf(e) === 1);
   const W = 260;
   const H = Math.round((260 * PLAN_H) / PLAN_W);
   const sx = W / PLAN_W;
@@ -91,10 +87,12 @@ function thumbSvg(plan) {
   const n = (v) => (Number(v) || 0).toFixed(1);
   const g = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`,
+    `<defs><pattern id="beam" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#e9ecec"/><rect width="1.2" height="4" fill="#8a9491"/></pattern></defs>`,
     `<rect width="${W}" height="${H}" fill="#ffffff"/>`,
   ];
-  for (const [x, y, w, d] of SHELL) {
-    g.push(`<rect x="${n(x * sx)}" y="${n(y * sy)}" width="${n(w * sx)}" height="${n(d * sy)}" fill="#e9ecec" stroke="#c6d0ce" stroke-width="0.6"/>`);
+  for (const e of els) {
+    const fill = e.kind === "beam" ? "url(#beam)" : "#e9ecec";
+    g.push(`<rect data-kind="${e.kind}" x="${n(e.x * sx)}" y="${n(e.y * sy)}" width="${n(e.w * sx)}" height="${n(e.d * sy)}" fill="${fill}" stroke="#c6d0ce" stroke-width="0.6"/>`);
   }
   for (const it of items) {
     if (it.hidden) continue;
@@ -167,7 +165,8 @@ async function handleApi(request, env, url) {
     if (sub === "/thumb.svg") {
       let plan = {};
       try { plan = JSON.parse(row.plan); } catch { /* 壞掉就給空縮圖 */ }
-      return new Response(thumbSvg(plan), {
+      const { elements } = structureOf(await getPlan(db, STRUCTURE_ID));
+      return new Response(thumbSvg(plan, elements), {
         headers: { "Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "no-store" },
       });
     }
