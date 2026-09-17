@@ -318,7 +318,7 @@ function renderProjection(){ [...plan.querySelectorAll('.proj')].forEach(e=>e.re
     place(d,p.x,p.y,p.w,p.d); d.textContent=p.floor+'F '+p.name; d.dataset.floor=p.floor; if(p.ref&&p.ref.id!=null)d.dataset.ref=p.ref.id; plan.appendChild(d); }); }
 // 神明桌限制（CONTEXT.md）：全部樓層一起算，回 Map<shrineId, 違規清單>
 function violations(){ const m=new Map(); shrineViolations(items,elements).forEach(v=>{ if(!m.has(v.shrineId))m.set(v.shrineId,[]); m.get(v.shrineId).push(v); }); return m; }
-function ruleText(v){ return v.rule==='beam'?'在 '+v.floor+'F 的「'+esc(v.name)+'」下方':v.rule==='bath'?'正上方 '+v.floor+'F 是「'+esc(v.name)+'」':v.floor+'F 的「'+esc(v.name)+'」正面沒有朝門口（圖的右邊）'; }
+function ruleText(v){ return v.rule==='beam'?'神明桌在 '+v.floor+'F 的「'+esc(v.name)+'」下方':v.rule==='bath'?'神明桌正上方 '+v.floor+'F 是「'+esc(v.name)+'」':v.floor+'F 的「'+esc(v.name)+'」正面沒有朝門口（圖的右邊）'; }
 function render(){
   [...plan.querySelectorAll('.it,.fx,.gap,.gapln,#measLayer')].forEach(e=>e.remove());
   const draggable=new Set(draggableSet(mode(),items,elements,curFloor));
