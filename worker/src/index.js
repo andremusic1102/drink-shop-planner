@@ -276,6 +276,8 @@ function structureOf(row) {
 function normalizeElements(body) {
   const src = body && body.structure && Array.isArray(body.structure.elements) ? body.structure.elements : null;
   if (!src) return null;
+  // 每個元素都得是物件；[null]、["x"] 這種 body 是壞的，回 400 而不是在 e.id 上炸成 500。
+  if (!src.every((e) => e && typeof e === "object" && !Array.isArray(e))) return null;
   return src.map((e) => ({
     id: String(e.id || ""),
     kind: String(e.kind || ""),

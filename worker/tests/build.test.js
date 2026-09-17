@@ -25,6 +25,8 @@ test("build 複製 app.html 與 src/rules.js，不複製 src/index.js", () => {
 
   assert.equal(existsSync(join(w, "public", "index.html")), true, "public/index.html");
   assert.equal(existsSync(join(w, "public", "rules.js")), true, "public/rules.js");
+  assert.equal(existsSync(join(w, "public", "floors.js")), true, "public/floors.js");
+  assert.equal(readFileSync(join(w, "public", "floors.js"), "utf8"), readFileSync(join(worker, "src", "floors.js"), "utf8"));
   assert.equal(existsSync(join(w, "public", "index.js")), false, "Worker 入口不得進 public/");
   assert.equal(readFileSync(join(w, "public", "index.html"), "utf8"), readFileSync(join(repo, "app.html"), "utf8"));
 });

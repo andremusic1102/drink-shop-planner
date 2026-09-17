@@ -117,6 +117,15 @@ test("PUT /api/structure 沒有 elements 陣列 → 400，不碰資料庫", asyn
   assert.equal(e.DB.calls.length, 0);
 });
 
+test("PUT /api/structure elements 裡有 null 或非物件 → 400，不是 500", async () => {
+  for (const bad of [[null], ["x"], [[1, 2]], [{ kind: "beam" }, null]]) {
+    const e = env([]);
+    const res = await worker.fetch(putStructure({ structure: { elements: bad }, baseRev: 0 }), e, {});
+    assert.equal(res.status, 400, JSON.stringify(bad));
+    assert.equal(e.DB.calls.length, 0);
+  }
+});
+
 test("GET /api/plans 不含 structure", async () => {
   const e = env([
     { id: "structure", name: "建築結構", rev: 2, updatedAt: 9 },
