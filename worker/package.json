@@ -5,7 +5,7 @@
   "description": "drink-shop-planner 的 Cloudflare Workers 後端（src/index.js）。零依賴；測試用 node --test 直接呼叫 fetch handler，D1／ASSETS 用假物件。",
   "scripts": {
     "test": "node --test",
-    "build": "mkdir -p public && cp ../app.html public/index.html && cp src/rules.js public/rules.js",
+    "build": "mkdir -p public && cp ../app.html public/index.html && cp src/rules.js public/rules.js && cp src/floors.js public/floors.js",
     "deploy": "npm run build && wrangler deploy"
   }
 }
