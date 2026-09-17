@@ -32,7 +32,8 @@ export function intersects(a, b) {
   return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.d <= b.y || b.y + b.d <= a.y);
 }
 
-// 回傳違規清單，每筆 {rule:'beam'|'bath'|'facing', floor, name, shrineId}。
+// 回傳違規清單，每筆 {rule:'beam'|'bath'|'facing', floor, name, shrineId}；
+// beam／bath 另帶 elementId（撞到哪個結構元件，前端拿去把投影亮紅）。
 // 空陣列 = 合格。多張神明桌就每張各算，結果帶 shrineId。
 export function shrineViolations(items, elements = DEFAULT_STRUCTURE) {
   const out = [];
@@ -43,12 +44,12 @@ export function shrineViolations(items, elements = DEFAULT_STRUCTURE) {
     const sf = floorOf(s);
     for (const e of els) {
       if (e.kind === "beam" && floorOf(e) === sf && intersects(s, e)) {
-        out.push({ rule: "beam", floor: sf, name: e.name || "梁", shrineId: s.id });
+        out.push({ rule: "beam", floor: sf, name: e.name || "梁", shrineId: s.id, elementId: e.id });
       }
     }
     for (const e of els) {
       if (e.kind === "bath" && floorOf(e) === sf + 1 && intersects(s, e)) {
-        out.push({ rule: "bath", floor: sf + 1, name: e.name || "廁所", shrineId: s.id });
+        out.push({ rule: "bath", floor: sf + 1, name: e.name || "廁所", shrineId: s.id, elementId: e.id });
       }
     }
     if ((s.rot || 0) % 360 !== 0) {

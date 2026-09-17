@@ -116,6 +116,14 @@
   .proj.shrine{border-color:var(--shrineB);color:var(--shrineB)}
   .proj.beam{background:repeating-linear-gradient(45deg,transparent 0 6px,rgba(120,120,120,.18) 6px 8px)}
   .fx.beam{background:repeating-linear-gradient(45deg,var(--shell) 0 6px,rgba(80,80,80,.28) 6px 8px);z-index:3}
+  /* 編輯結構模式：設備鎖住變淡、結構元件可選可拖 */
+  .plan.structmode .it{pointer-events:none;opacity:.45}
+  .plan.structmode .fx{pointer-events:auto;cursor:grab;z-index:11;outline:1.5px dashed var(--accent);outline-offset:-2px}
+  .plan.structmode .fx.sel{outline:2.5px solid var(--sel);z-index:13}
+  .proj.bad{border-color:var(--sel);color:var(--sel);opacity:.9;border-width:2.5px}
+  .fx.bad{box-shadow:inset 0 0 0 3px var(--sel)}
+  .it.shrinebad{box-shadow:0 0 0 3px var(--sel), 0 0 12px var(--sel)}
+  .structbtn{display:none}.structon .structbtn{display:inline-flex}.structon .itembtn{display:none}
   #__toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--wall);color:var(--card);padding:9px 14px;border-radius:8px;font-size:13px;z-index:2000;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:90%;opacity:0;transition:opacity .4s;pointer-events:none}
 </style>
 
@@ -141,10 +149,14 @@
       <span class="syncpill off" id="syncPill">● 離線</span>
       <span class="ftabs" id="floorTabs"><button data-floor="1" class="on">1F</button><button data-floor="2">2F</button><button data-floor="3">3F</button><button data-floor="4">4F</button></span>
       <label class="tgl"><input type="checkbox" id="projToggle" checked> 投影別層</label>
-      <button class="p" id="addDoor">＋ 門</button>
-      <button id="addWin">＋ 窗戶</button>
-      <button id="addWall">＋ 隔間牆</button>
-      <button id="addObj">＋ 自訂物件</button>
+      <label class="tgl" title="開著只能動梁／樓梯／廁所／玄關，設備鎖住；關著反過來"><input type="checkbox" id="structMode"> 🏗 編輯結構</label>
+      <button class="structbtn" id="addBeam">＋ 梁</button>
+      <button class="structbtn" id="addBath">＋ 廁所</button>
+      <button class="structbtn" id="addStairs">＋ 樓梯</button>
+      <button class="p itembtn" id="addDoor">＋ 門</button>
+      <button class="itembtn" id="addWin">＋ 窗戶</button>
+      <button class="itembtn" id="addWall">＋ 隔間牆</button>
+      <button class="itembtn" id="addObj">＋ 自訂物件</button>
       <button id="dup">⧉ 複製</button>
       <button id="rot">⟳ 旋轉90°</button>
       <button id="flip">⇄ 翻面</button>
@@ -211,7 +223,7 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection } from './floors.js';
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet } from './floors.js';
 const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140;
 const CAT={counter:['var(--counter)','var(--counterB)'],cold:['var(--cold)','var(--coldB)'],water:['var(--water)','var(--waterB)'],
   heat:['var(--heat)','var(--heatB)'],seal:['var(--seal)','var(--sealB)'],shrine:['var(--shrine)','var(--shrineB)'],shelf:['var(--shelf)','var(--shelfB)']};
@@ -221,11 +233,36 @@ let elements=DEFAULT_STRUCTURE.slice(), structRev=0;
 // 目前看的樓層。只是這台瀏覽器的檢視狀態，不進方案。
 let curFloor=1;
 try{ const f=+localStorage.getItem('drinkshop_floor'); if(FLOORS.includes(f))curFloor=f; }catch(e){}
-function setFloor(f){ curFloor=f; sel=null; try{localStorage.setItem('drinkshop_floor',String(f));}catch(e){}
+function setFloor(f){ curFloor=f; sel=null; selEl=null; mp=null;   // 量測的第一點不跨樓層
+  try{localStorage.setItem('drinkshop_floor',String(f));}catch(e){}
   document.querySelectorAll('#floorTabs button').forEach(b=>b.classList.toggle('on',+b.dataset.floor===f)); render(); }
 // 當層的設備／結構元件——所有畫圖、吸附、間距、清單都只看這兩個，別層的東西只以投影出現。
 const cur=()=>onFloor(items,curFloor);
 const curEls=()=>elementsOn(elements,curFloor);
+
+function toast(msg){ const t=document.getElementById('__toast'); t.textContent=msg; t.style.opacity='1';
+  clearTimeout(t.__h); t.__h=setTimeout(()=>t.style.opacity='0',3400); }
+
+// ===== 編輯結構模式：開著只能動結構元件、關著只能動設備（draggableSet 是唯一判準）=====
+let structMode=false, selEl=null, structDirty=null, structPushing=false;
+const mode=()=>structMode?'structure':'items';
+function setStructMode(on){ structMode=!!on; sel=null; selEl=null; mp=null;
+  $('#structMode').checked=structMode; document.body.classList.toggle('structon',structMode); plan.classList.toggle('structmode',structMode); render(); }
+function elId(kind){ return kind+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+function addElement(kind,w,d){ const e={id:elId(kind),kind,floor:curFloor,name:KIND_LABEL[kind]||kind,x:100,y:100,w,d};
+  elements=elements.concat([e]); selEl=e.id; saveStructure(); render(); }
+function delElement(){ if(!selEl)return; const e=elements.find(x=>x.id===selEl); if(!e)return;
+  if(!confirm('刪除結構元件「'+elLabel(e)+'」？（全部方案都會看不到它）'))return;
+  elements=elements.filter(x=>x.id!==selEl); selEl=null; saveStructure(); render(); }
+// 結構獨立存：自己的 rev、自己的 409。跟方案的同步互不干擾。
+function saveStructure(){ clearTimeout(structDirty); structDirty=setTimeout(pushStructure,600); }
+async function pushStructure(){ if(structPushing)return; structPushing=true;
+  try{ const r=await fetch('/api/structure',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({structure:{elements},baseRev:structRev})});
+    if(r.status===409){ const o=await r.json(); elements=o.structure.elements; structRev=o.rev; toast('建築結構被別人同時改了，已載入最新版，請重做剛才的結構調整'); render(); }
+    else if(r.ok){ const o=await r.json(); structRev=o.rev; }
+    else { toast('結構儲存失敗（HTTP '+r.status+'）'); }
+  }catch(e){ toast('結構儲存失敗：離線'); }
+  structPushing=false; }
 const DEFAULT=[
   {n:'工作台2(含水槽)',c:'counter',w:78,d:196,x:1215,y:100,h:123},
   {n:'出餐檯',c:'counter',w:93,d:61,x:1200,y:300,h:80},
@@ -274,13 +311,23 @@ function renderProjection(){ [...plan.querySelectorAll('.proj')].forEach(e=>e.re
   const t=$('#projToggle'); if(t&&!t.checked) return;
   projection(elements,items,curFloor).forEach(p=>{ const d=document.createElement('div'); d.className='proj '+(p.src==='shrine'?'shrine':p.kind);
     place(d,p.x,p.y,p.w,p.d); d.textContent=p.floor+'F '+p.name; d.dataset.floor=p.floor; if(p.ref&&p.ref.id!=null)d.dataset.ref=p.ref.id; plan.appendChild(d); }); }
+// 神明桌限制（CONTEXT.md）：全部樓層一起算，回 Map<shrineId, 違規清單>
+function violations(){ const m=new Map(); shrineViolations(items,elements).forEach(v=>{ if(!m.has(v.shrineId))m.set(v.shrineId,[]); m.get(v.shrineId).push(v); }); return m; }
+function ruleText(v){ return v.rule==='beam'?'在 '+v.floor+'F 的「'+v.name+'」下方':v.rule==='bath'?'正上方 '+v.floor+'F 是「'+v.name+'」':'正面沒有朝門口（圖的右邊）'; }
 function render(){
   [...plan.querySelectorAll('.it,.fx,.gap,.gapln,#measLayer')].forEach(e=>e.remove());
-  curEls().forEach(s=>{ const d=document.createElement('div'); d.className='fx '+(s.kind||'');
-    place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+esc(elLabel(s))+'</span>'; d.dataset.eid=s.id; plan.appendChild(d); });
+  const draggable=new Set(draggableSet(mode(),items,elements,curFloor));
+  curEls().forEach(s=>{ const d=document.createElement('div'); d.className='fx '+(s.kind||'')+(selEl===s.id?' sel':'');
+    place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+esc(elLabel(s))+'</span>'; d.dataset.eid=s.id;
+    if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl); plan.appendChild(d); });
   renderProjection();
+  const bad=violations();
+  bad.forEach((list,shrineId)=>list.forEach(v=>{
+    plan.querySelectorAll('.proj[data-ref="'+shrineId+'"]').forEach(p=>p.classList.add('bad'));          // 站在樓上看：神明桌投影紅
+    if(v.elementId==null)return;
+    plan.querySelectorAll('.proj[data-ref="'+v.elementId+'"],.fx[data-eid="'+v.elementId+'"]').forEach(p=>p.classList.add('bad')); }));
   cur().forEach(it=>{ if(it.hidden)return;
-    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'');
+    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' shrinebad':'');
     const pxW=it.w*scale, pxH=it.d*scale;
     if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
@@ -306,7 +353,7 @@ function render(){
     }
     place(d,it.x,it.y,it.w,it.d);
     if(overlaps(it)) d.classList.add('bad');
-    d.dataset.id=it.id; d.addEventListener('pointerdown',startDrag); plan.appendChild(d);
+    d.dataset.id=it.id; if(draggable.has(it)) d.addEventListener('pointerdown',startDrag); plan.appendChild(d);
   });
   renderGaps(); renderMeasures(); buildList(); updateSel();
   $('#foot').textContent=curFloor+'F 共 '+cur().length+' 件（全部 '+items.length+' 件）';
@@ -364,14 +411,43 @@ function endDrag(){ if(!drag)return; const el=drag.el;
   el.removeEventListener('pointermove',onDrag); el.removeEventListener('pointerup',endDrag); el.removeEventListener('pointercancel',endDrag);
   drag=null; save(); render(); }
 
+// 結構元件的拖曳：不吸附（量出來的數字用面板打），只夾在圖框內
+let dragEl=null;
+function startDragEl(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget, s=elements.find(x=>x.id===el.dataset.eid); if(!s)return;
+  selEl=s.id; sel=null; plan.querySelectorAll('.fx.sel').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
+  dragEl={s,el,sx:e.clientX,sy:e.clientY,ox:s.x,oy:s.y};
+  try{el.setPointerCapture(e.pointerId);}catch(_){}
+  el.addEventListener('pointermove',onDragEl); el.addEventListener('pointerup',endDragEl); el.addEventListener('pointercancel',endDragEl);
+  updateSel(); e.preventDefault(); e.stopPropagation(); }
+function onDragEl(e){ if(!dragEl)return; const s=dragEl.s;
+  const nx=Math.round(Math.max(0,Math.min(PLAN_W-s.w,dragEl.ox+(e.clientX-dragEl.sx)/scale))), ny=Math.round(Math.max(0,Math.min(PLAN_H-s.d,dragEl.oy+(e.clientY-dragEl.sy)/scale)));
+  s.x=nx; s.y=ny; dragEl.el.style.left=nx*scale+'px'; dragEl.el.style.top=ny*scale+'px'; updateSel(); }
+function endDragEl(){ if(!dragEl)return; const el=dragEl.el;
+  el.removeEventListener('pointermove',onDragEl); el.removeEventListener('pointerup',endDragEl); el.removeEventListener('pointercancel',endDragEl);
+  dragEl=null; saveStructure(); render(); }
+function updateSelEl(){ const s=elements.find(x=>x.id===selEl);
+  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／樓梯／廁所／玄關來移動或改尺寸；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
+  $('#selBody').style.color='var(--ink)'; $('#selBtns').style.display='none';
+  const num=(id,v)=>'<input id="'+id+'" type="number" step="1" value="'+Math.round(v)+'" style="width:64px">';
+  $('#selBody').innerHTML='<div class="kv"><b>'+(KIND_LABEL[s.kind]||s.kind)+'</b> · '+curFloor+'F</div>'+
+    '<div class="kv">名稱 <input id="en" value="'+esc(s.name||'')+'" style="width:150px"></div>'+
+    '<div class="kv">X '+num('ex',s.x)+' Y '+num('ey',s.y)+'</div>'+
+    '<div class="kv">長 '+num('ew',s.w)+' 寬 '+num('ed',s.d)+' cm</div>'+
+    '<div class="rowbtn"><button class="warn" id="edel">刪除這個結構元件</button></div>'+
+    '<div class="kv" style="color:var(--sub)">全部方案共用；改完自動存</div>';
+  const bind=(id,k,min)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const v=k==='name'?el.value.trim():Math.max(min,+el.value||0); s[k]=v;
+    if(k!=='name'){ s.x=Math.max(0,Math.min(PLAN_W-s.w,s.x)); s.y=Math.max(0,Math.min(PLAN_H-s.d,s.y)); } saveStructure(); render(); }; };
+  bind('en','name',0); bind('ex','x',0); bind('ey','y',0); bind('ew','w',5); bind('ed','d',5);
+  const db=$('#edel'); if(db)db.onclick=delElement; }
+
 function rotate(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
   const cx=it.x+it.w/2,cy=it.y+it.d/2; if(!it.door&&!it.win)[it.w,it.d]=[it.d,it.w]; it.rot=((it.rot||0)+90)%360;
   [it.x,it.y]=clampPos(it,cx-it.w/2,cy-it.d/2); save(); render(); }
 function dup(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
   const c=JSON.parse(JSON.stringify(it)); c.id=uid++; [c.x,c.y]=clampPos(c,it.x+30,it.y+30); items.push(c); sel=c.id; save(); render(); }
-function del(){ if(sel==null)return; items=items.filter(i=>i.id!==sel); sel=null; save(); render(); }
+function del(){ if(structMode){ delElement(); return; } if(sel==null)return; items=items.filter(i=>i.id!==sel); sel=null; save(); render(); }
 
-function updateSel(){ const it=items.find(i=>i.id===sel);
+function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.find(i=>i.id===sel);
   if(!it){$('#selBody').innerHTML='點一個方塊來看尺寸／移動它';$('#selBody').style.color='var(--sub)';$('#selBtns').style.display='none';return;}
   $('#selBody').style.color='var(--ink)';$('#selBtns').style.display='flex';
   if(it.door){ $('#selBody').innerHTML='<div class="kv"><b>門（四分之一圓）</b></div>'+
@@ -392,7 +468,8 @@ function updateSel(){ const it=items.find(i=>i.id===sel);
     '<div class="kv">尺寸 '+it.w+' × '+it.d+(it.h?' × '+it.h:'')+' cm</div>'+
     '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>'+
     '<div class="kv">距牆 左'+Math.round(it.x)+' 右'+Math.round(PLAN_W-it.x-it.w)+' 上'+Math.round(it.y)+' 下'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
-    (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':''); }
+    (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'')+
+    (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join(''); }
 function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.filter(i=>i.hidden).length; wrap.innerHTML='<h2>'+curFloor+'F 清單 · 👁隱藏/顯示'+(nh?'（'+nh+'隱藏）':'')+'</h2>';
   here.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(it.win?['var(--cold)','var(--coldB)']:(CAT[it.c]||CAT.shelf)); const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':''); if(it.hidden)c.style.opacity='.45';
     c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span><span>'+(it.door?'門 '+it.w:(it.win?'窗 '+it.w:it.n))+
@@ -409,6 +486,10 @@ $('#addWin').onclick=()=>{ const w=Math.max(20,+prompt('窗寬(cm)：','120')||1
   items.push({id:uid++,n:'窗戶',c:'win',w:w,d:16,x:200,y:0,h:0,rot:0,win:true,floor:curFloor}); sel=uid-1; save(); render(); };
 $('#floorTabs').onclick=(e)=>{ const b=e.target.closest('button'); if(b&&b.dataset.floor) setFloor(+b.dataset.floor); };
 $('#projToggle').onchange=renderProjection;
+$('#structMode').onchange=(e)=>setStructMode(e.target.checked);
+$('#addBeam').onclick=()=>{ const w=Math.max(10,+prompt('梁寬(cm)：','30')||30); addElement('beam',PLAN_W,w); };
+$('#addBath').onclick=()=>addElement('bath',140,200);
+$('#addStairs').onclick=()=>addElement('stairs',267,100);
 function flip(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return; it.flip=!it.flip; save(); render(); }
 $('#flip').onclick=flip;
 
@@ -476,7 +557,7 @@ $('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉這份方
 $('#zoom').oninput=fit; $('#gaps').onchange=renderGaps;
 $('#togglePanel').onclick=()=>{ const a=document.querySelector('.app'); a.classList.toggle('nopanel'); $('#togglePanel').textContent=a.classList.contains('nopanel')?'◧ 顯示清單':'◧ 隱藏清單'; setTimeout(fit,10); };
 document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT')return; if(e.key==='r'||e.key==='R')rotate(); if(e.key==='d'||e.key==='D')dup(); if(e.key==='Delete'||e.key==='Backspace')del(); });
-plan.addEventListener('pointerdown',e=>{ if(measuring){ handleMeasureClick(e); return; } if(e.target===plan||e.target.classList.contains('grid')){sel=null;render();} });
+plan.addEventListener('pointerdown',e=>{ if(measuring){ handleMeasureClick(e); return; } if(e.target===plan||e.target.classList.contains('grid')){sel=null;selEl=null;render();} });
 // ===== 分享網址（改為直接複製本站網址）與匯出 =====
 $('#share').onclick=()=>{ const u=location.origin+location.pathname; if(navigator.clipboard)navigator.clipboard.writeText(u).catch(()=>{});
   const b=$('#share'); const t=b.textContent; b.textContent='✓ 已複製'; setTimeout(()=>b.textContent=t,1500);
@@ -559,8 +640,6 @@ loadStructure();
     sel=null; save(); saveM(); render();
     applying=false;
   }
-  function toast(msg){ const t=document.getElementById('__toast'); t.textContent=msg; t.style.opacity='1';
-    clearTimeout(t.__h); t.__h=setTimeout(()=>t.style.opacity='0',3400); }
 
   async function pushPlan(){
     if(!cur||pushing) return; pushing=true;
