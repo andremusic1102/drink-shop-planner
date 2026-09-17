@@ -240,13 +240,15 @@ function setFloor(f){ curFloor=f; sel=null; selEl=null; mp=null;   // 量測的�
 const cur=()=>onFloor(items,curFloor);
 const curEls=()=>elementsOn(elements,curFloor);
 
-function toast(msg){ const t=document.getElementById('__toast'); t.textContent=msg; t.style.opacity='1';
+function toast(msg){ let t=document.getElementById('__toast'); if(!t){ t=document.createElement('div'); t.id='__toast'; document.body.appendChild(t); }
+  t.textContent=msg; t.style.opacity='1';
   clearTimeout(t.__h); t.__h=setTimeout(()=>t.style.opacity='0',3400); }
 
 // ===== 編輯結構模式：開著只能動結構元件、關著只能動設備（draggableSet 是唯一判準）=====
-let structMode=false, selEl=null, structDirty=null, structPushing=false, structPending=false;
+let structMode=false, selEl=null, structDirty=null, structPushing=false, structPending=false, structLoaded=false;
 const mode=()=>structMode?'structure':'items';
-function setStructMode(on){ structMode=!!on; sel=null; selEl=null; mp=null;
+function setStructMode(on){ if(on&&!structLoaded){ $('#structMode').checked=false; toast('建築結構還在載入（或離線），先不能改結構'); return; }
+  structMode=!!on; sel=null; selEl=null; mp=null;
   $('#structMode').checked=structMode; document.body.classList.toggle('structon',structMode); plan.classList.toggle('structmode',structMode); render(); }
 function elId(kind){ return kind+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function addElement(kind,w,d){ w=Math.min(PLAN_W,Math.max(5,w)); d=Math.min(PLAN_H,Math.max(5,d));
@@ -611,8 +613,11 @@ setFloor(curFloor);   // 同步 tab 樣式（上次看的樓層記在這台瀏�
 // ===== 建築結構：開機讀一次；讀不到就用預設殼 =====
 async function loadStructure(){
   try{ const r=await fetch('/api/structure'); if(!r.ok)return; const o=await r.json();
-    if(Array.isArray(o.elements)){ elements=o.elements; structRev=o.rev||0; render(); } }
-  catch(e){ /* 離線：留預設 */ }
+    if(!Array.isArray(o.elements))return;
+    // 本機已有未送出的結構改動（理論上載入完成前開不了結構模式，這是第二道保險）就不覆寫
+    if(structDirty||structPushing||structPending)return;
+    elements=o.elements; structRev=o.rev||0; structLoaded=true; render(); }
+  catch(e){ /* 離線：留預設，結構模式開不了 */ }
 }
 loadStructure();
 
