@@ -249,7 +249,8 @@ const mode=()=>structMode?'structure':'items';
 function setStructMode(on){ structMode=!!on; sel=null; selEl=null; mp=null;
   $('#structMode').checked=structMode; document.body.classList.toggle('structon',structMode); plan.classList.toggle('structmode',structMode); render(); }
 function elId(kind){ return kind+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
-function addElement(kind,w,d){ const e={id:elId(kind),kind,floor:curFloor,name:KIND_LABEL[kind]||kind,x:100,y:100,w,d};
+function addElement(kind,w,d){ w=Math.min(PLAN_W,Math.max(5,w)); d=Math.min(PLAN_H,Math.max(5,d));
+  const e={id:elId(kind),kind,floor:curFloor,name:KIND_LABEL[kind]||kind,x:Math.min(100,PLAN_W-w),y:Math.min(100,PLAN_H-d),w,d};
   elements=elements.concat([e]); selEl=e.id; saveStructure(); render(); }
 function delElement(){ if(!selEl)return; const e=elements.find(x=>x.id===selEl); if(!e)return;
   if(!confirm('刪除結構元件「'+elLabel(e)+'」？（全部方案都會看不到它）'))return;
@@ -324,10 +325,9 @@ function render(){
     if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl); plan.appendChild(d); });
   renderProjection();
   const bad=violations();
-  bad.forEach((list,shrineId)=>list.forEach(v=>{
-    plan.querySelectorAll('.proj[data-ref="'+shrineId+'"]').forEach(p=>p.classList.add('bad'));          // 站在樓上看：神明桌投影紅
-    if(v.elementId==null)return;
-    plan.querySelectorAll('.proj[data-ref="'+v.elementId+'"],.fx[data-eid="'+v.elementId+'"]').forEach(p=>p.classList.add('bad')); }));
+  // 用 dataset 比對而不是組 selector：id 是任意字串（/api/structure 不限制），含引號會讓 querySelectorAll 炸掉整個 render
+  if(bad.size){ const hot=new Set(); bad.forEach((list,shrineId)=>{ hot.add(String(shrineId)); list.forEach(v=>{ if(v.elementId!=null)hot.add(String(v.elementId)); }); });
+    plan.querySelectorAll('.proj,.fx').forEach(p=>{ const k=p.dataset.ref!=null?p.dataset.ref:p.dataset.eid; if(k!=null&&hot.has(String(k)))p.classList.add('bad'); }); }
   cur().forEach(it=>{ if(it.hidden)return;
     const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' shrinebad':'');
     const pxW=it.w*scale, pxH=it.d*scale;
