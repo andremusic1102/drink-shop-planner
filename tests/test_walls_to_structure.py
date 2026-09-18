@@ -33,13 +33,14 @@ def test_collect_dedupes_identical_walls_across_plans():
     assert w2s.collect_partitions([]) == []
 
 
-def test_collect_merges_walls_within_5cm():
-    # 正式站實測：同一道牆在兩份方案裡差 2.4 cm（手拖的），要合成一筆；差 10 cm 以上才是兩道
-    a = {"id": "a", "name": "A", "rev": 1, "plan": {"items": [WALL(275.6, id=1), WALL(640, id=2)]}}
-    b = {"id": "b", "name": "B", "rev": 1, "plan": {"items": [WALL(278.04, id=1), WALL(652, id=2)]}}
+def test_collect_keeps_walls_that_differ_by_a_few_cm():
+    # 契約：同一組 (floor, x, y, w, d) 才去重。差幾 cm 的是兩道（正式站 275.6 vs 278.04 那對會並存），
+    # 不做容差——容差會把真的不同的牆（276 vs 284）合掉、那道牆就消失
+    a = {"id": "a", "name": "A", "rev": 1, "plan": {"items": [WALL(275.6, id=1), WALL(276, id=2)]}}
+    b = {"id": "b", "name": "B", "rev": 1, "plan": {"items": [WALL(278.04, id=1), WALL(284, id=2), WALL(276, id=3)]}}
     parts = w2s.collect_partitions([a, b])
-    assert [p["x"] for p in parts] == [275.6, 640, 652], "275.6/278.04 合成一筆（留第一份的值）；640/652 是兩道"
-    assert parts[0]["_from"] == ["A", "B"]
+    assert [p["x"] for p in parts] == [275.6, 276, 278.04, 284]
+    assert next(p for p in parts if p["x"] == 276)["_from"] == ["A", "B"], "完全相同的才合"
 
 
 def test_strip_walls_keeps_everything_else():
@@ -92,16 +93,25 @@ def test_apply_writes_structure_first_and_never_touches_plans_on_failure():
     assert len(calls[0][2]["structure"]["elements"]) == 5
 
 
-def test_apply_strips_walls_per_plan_and_redoes_on_409():
+def test_apply_409_leaves_that_plan_untouched_and_rerun_picks_up_new_wall():
+    # 第一次：a 撞 409（有人剛加了一道新牆）→ a 不動、b 正常、回 False；不重 GET、不 strip 最新版
     http_fn, calls = _fake(conflict_once="a")
     ok = w2s.apply("http://x", [PLAN_A, PLAN_B, PLAN_C], {"rev": 15, "elements": [{"id": "beam-1", "kind": "beam", "floor": 1, "x": 0, "y": 0, "w": 1300, "d": 30}]},
                    w2s.collect_partitions([PLAN_A, PLAN_B]), http_fn=http_fn)
-    assert ok is True
+    assert ok is False
     seq = [(m, p) for m, p, _ in calls]
-    assert seq == [("PUT", "/api/structure"), ("PUT", "/api/plans/a"), ("GET", "/api/plans/a"), ("PUT", "/api/plans/a"), ("PUT", "/api/plans/b")], \
-        "結構 → a（409）→ 重 GET a → 再 PUT a → b；c 沒有牆不碰"
+    assert seq == [("PUT", "/api/structure"), ("PUT", "/api/plans/a"), ("PUT", "/api/plans/b")], "a 409 後不重試；c 沒有牆不碰"
     assert len(calls[0][2]["structure"]["elements"]) == 6, "現有的梁＋5 道牆"
-    second_put_a = calls[3][2]
-    assert second_put_a["baseRev"] == 349 and [i["id"] for i in second_put_a["plan"]["items"]] == [1]
-    put_b = calls[4][2]
+    put_b = calls[2][2]
     assert put_b["baseRev"] == 179 and [i["id"] for i in put_b["plan"]["items"]] == [7]
+    # 重跑：a 的最新版多了一道新牆 → 新牆進結構（舊的 5 道已在，略過）、a 再被 strip
+    new_wall = WALL(900, id=8)
+    latest_a = {**PLAN_A, "rev": 349, "plan": {"items": PLAN_A["plan"]["items"] + [new_wall], "measures": []}}
+    existing = [{"id": "beam-1", "kind": "beam", "floor": 1, "x": 0, "y": 0, "w": 1300, "d": 30}] + \
+        [{k: v for k, v in e.items() if not k.startswith("_")} for e in w2s.collect_partitions([PLAN_A, PLAN_B])]
+    http_fn2, calls2 = _fake()
+    ok2 = w2s.apply("http://x", [latest_a, PLAN_C], {"rev": 16, "elements": existing}, w2s.collect_partitions([latest_a]), http_fn=http_fn2)
+    assert ok2 is True
+    sent = calls2[0][2]["structure"]["elements"]
+    assert len(sent) == 7 and any(e["x"] == 900 for e in sent), "只多了那道新牆"
+    assert calls2[1][2]["baseRev"] == 349 and [i["id"] for i in calls2[1][2]["plan"]["items"]] == [1]
