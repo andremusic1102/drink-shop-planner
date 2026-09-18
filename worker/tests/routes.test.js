@@ -182,6 +182,22 @@ test("縮圖不含 floor=2 的 item", async () => {
   assert.ok(svg.includes('data-kind="bath"'), "沒有 structure 列時用預設 1F 三個殼");
 });
 
+test("縮圖不含框外的 item", async () => {
+  const items = [
+    { id: 1, n: "冰箱", c: "cold", x: 10, y: 10, w: 60, d: 60 },
+    { id: 2, n: "暫放的架子", c: "shelf", x: 1400, y: 50, w: 90, d: 45 },   // 完全在門口側外
+    { id: 3, n: "壓線的架子", c: "shelf", x: 1270, y: 50, w: 90, d: 45 },   // 一半在框內：照畫
+  ];
+  const e = env([], { byId: { ab12cd: planRow(items) } });
+  const res = await worker.fetch(req("/api/plans/ab12cd/thumb.svg"), e, {});
+  assert.equal(res.status, 200);
+  const svg = await res.text();
+  const n = (v) => (v * 260 / 1300).toFixed(1);
+  assert.ok(svg.includes(`x="${n(10)}"`), "框內的有畫");
+  assert.ok(!svg.includes(`x="${n(1400)}"`), "暫放的不畫");
+  assert.ok(svg.includes(`x="${n(1270)}"`), "壓線的照畫");
+});
+
 test("縮圖畫出 structure 列的梁", async () => {
   const structure = { id: "structure", name: "建築結構", rev: 3, ts: 2, plan: JSON.stringify({ elements: [
     { id: "b1", kind: "beam", floor: 1, name: "梁A", x: 0, y: 150, w: 1300, d: 30 },

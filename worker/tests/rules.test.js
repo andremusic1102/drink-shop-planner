@@ -112,3 +112,12 @@ test("items 或 elements 不是陣列或空 → 0 筆，不炸", () => {
   assert.deepEqual(shrineViolations([shrine(300, 125)], null), []);
   assert.deepEqual(shrineViolations([shrine(300, 125)], {}), []);
 });
+
+test("暫放的神明桌不算違規", () => {
+  // 同一根梁：框內的神明桌撞梁；整個拖到框外（暫放）就不算，rot 也不看
+  const beamAll = beam(0, 0, 1300, 375);
+  assert.equal(shrineViolations([shrine(300, 125, { rot: 90 })], [...STRUCT, beamAll]).length, 2, "框內：beam＋facing");
+  assert.deepEqual(shrineViolations([shrine(1400, 125, { rot: 90 })], [...STRUCT, beamAll]), [], "完全在門口側外");
+  assert.deepEqual(shrineViolations([shrine(300, 400, { rot: 90 })], [...STRUCT, beamAll]), [], "完全在對面牆外");
+  assert.equal(shrineViolations([shrine(1280, 125)], [...STRUCT, beamAll]).length, 1, "壓線的照常算");
+});

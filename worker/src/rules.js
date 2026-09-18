@@ -32,6 +32,17 @@ export function intersects(a, b) {
   return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.d <= b.y || b.y + b.d <= a.y);
 }
 
+// 暫放（CONTEXT.md）：設備被拖到房子的框外。矩形跟 0..PLAN_W × 0..PLAN_H **完全不相交**才算；
+// 壓線（一半在框內）不算，照常檢查。不加欄位——位置就是狀態，拖回框內就恢復。
+// 定義在這裡（不在 floors.js）是因為 shrineViolations 也要跳過暫放的，而 floors.js 匯入本檔；
+// floors.js 再 re-export 給前端。
+const FRAME = { x: 0, y: 0, w: PLAN_W, d: PLAN_H };
+export function isParked(it) {
+  if (!it) return false;
+  const r = { x: Number(it.x) || 0, y: Number(it.y) || 0, w: Number(it.w) || 0, d: Number(it.d) || 0 };
+  return !intersects(r, FRAME);
+}
+
 // 回傳違規清單，每筆 {rule:'beam'|'bath'|'facing', floor, name, shrineId}；
 // beam／bath 另帶 elementId（撞到哪個結構元件，前端拿去把投影亮紅）。
 // 空陣列 = 合格。多張神明桌就每張各算，結果帶 shrineId。
@@ -40,7 +51,7 @@ export function shrineViolations(items, elements = DEFAULT_STRUCTURE) {
   const list = Array.isArray(items) ? items : [];
   const els = Array.isArray(elements) ? elements : [];
   for (const s of list) {
-    if (s.c !== "shrine" || s.hidden) continue;
+    if (s.c !== "shrine" || s.hidden || isParked(s)) continue;   // 暫放的不算擺法的一部分
     const sf = floorOf(s);
     for (const e of els) {
       if (e.kind === "beam" && floorOf(e) === sf && intersects(s, e)) {
