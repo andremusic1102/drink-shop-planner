@@ -141,6 +141,31 @@ test("PUT /api/structure kind 不在允許集合 → 400", async () => {
   assert.ok(ok.DB.calls.some((c) => /INSERT OR IGNORE INTO plans/.test(c.sql) && c.args[0] === "structure"));
 });
 
+test("PUT /api/structure kind partition → 200", async () => {
+  const el = { id: "partition-1", kind: "partition", floor: 2, name: "房間隔層", x: 300, y: 0, w: 10, d: 375 };
+  const ok = env([]);
+  const res = await worker.fetch(putStructure({ structure: { elements: [el] }, baseRev: 0 }), ok, {});
+  assert.equal(res.status, 200);
+  const ins = ok.DB.calls.find((c) => /INSERT OR IGNORE INTO plans/.test(c.sql) && c.args.length);   // prepare 也記一筆（args 空），要 bind 過的那筆
+  assert.ok(ins, "走到 INSERT");
+  assert.ok(JSON.parse(ins.args[2]).elements.some((e) => e.kind === "partition"), "partition 原樣寫進去");
+});
+
+test("縮圖畫出 partition", async () => {
+  const structure = { id: "structure", name: "建築結構", rev: 3, ts: 1, plan: JSON.stringify({ elements: [
+    { id: "partition-1", kind: "partition", floor: 1, name: "房間隔層", x: 640, y: 100, w: 10, d: 275 },
+    { id: "partition-2", kind: "partition", floor: 2, name: "房間隔層", x: 100, y: 0, w: 10, d: 375 },
+  ] }) };
+  const e = env([], { byId: { ab12cd: planRow([]), structure } });
+  const res = await worker.fetch(req("/api/plans/ab12cd/thumb.svg"), e, {});
+  assert.equal(res.status, 200);
+  const svg = await res.text();
+  const n = (v) => (v * 260 / 1300).toFixed(1);
+  assert.ok(svg.includes(`data-kind="partition" x="${n(640)}"`), "1F 的房間隔層有畫");
+  assert.ok(svg.includes('fill="#2f3a3a"'), "深色實心");
+  assert.ok(!svg.includes(`x="${n(100)}" y="0.0"`), "2F 的不畫（縮圖只畫 1F）");
+});
+
 test("GET /api/plans 不含 structure", async () => {
   const e = env([
     { id: "structure", name: "建築結構", rev: 2, updatedAt: 9 },

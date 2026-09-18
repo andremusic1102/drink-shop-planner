@@ -65,4 +65,4 @@ export function draggableSet(mode, items, elements, floor) {
 }
 
 /** 結構元件種類的中文名（畫標籤用）。 */
-export const KIND_LABEL = { beam: "梁", stairs: "樓梯", bath: "廁所", entry: "玄關" };
+export const KIND_LABEL = { beam: "梁", stairs: "樓梯", bath: "廁所", entry: "玄關", partition: "房間隔層" };
