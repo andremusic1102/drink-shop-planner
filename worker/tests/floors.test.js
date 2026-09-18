@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { cur, elementsOn, projection, draggableSet, FLOORS, isParked, PROJECTED_KINDS, cloneTo, moveTo, copyFloor, cloneMany, moveMany, COPYABLE_KINDS, onWalkway } from "../src/floors.js";
+import { cur, elementsOn, projection, draggableSet, FLOORS, isParked, PROJECTED_KINDS, cloneTo, moveTo, copyFloor, cloneMany, moveMany, COPYABLE_KINDS, onWalkway, stretchSide, stretchSides } from "../src/floors.js";
 
 const items = [
   { id: 1, n: "冰箱", c: "cold", x: 10, y: 10, w: 60, d: 60 },                 // floor 缺 → 1F
@@ -181,6 +181,44 @@ test("複製整層：來源層原樣不動、新 id 不重複", () => {
   assert.equal(new Set(r.elements.map((e) => e.id)).size, r.elements.length, "結構 id 不重複");
   assert.equal(FURN.length, 5, "不動原陣列");
   assert.equal(HOUSE.length, 9);
+});
+
+test("stretchSide：橫牆拉兩端只動那一邊", () => {
+  const wall = { id: "p", kind: "partition", floor: 2, x: 400, y: 100, w: 200, d: 10 };
+  assert.deepEqual(stretchSide(wall, "x1", 50), { ...wall, w: 250 }, "門口側端拉長 50");
+  assert.deepEqual(stretchSide(wall, "x1", -50), { ...wall, w: 150 }, "門口側端縮短 50");
+  assert.deepEqual(stretchSide(wall, "x0", -30), { ...wall, x: 370, w: 230 }, "後牆側端拉長：x 往前、w 加，門口側端 600 不動");
+  assert.deepEqual(stretchSide(wall, "x0", 30), { ...wall, x: 430, w: 170 }, "後牆側端縮短");
+  assert.deepEqual(wall, { id: "p", kind: "partition", floor: 2, x: 400, y: 100, w: 200, d: 10 }, "原物件不變");
+});
+
+test("stretchSide：直牆拉兩端", () => {
+  const wall = { id: "p", kind: "partition", floor: 2, x: 400, y: 100, w: 13, d: 200 };
+  assert.deepEqual(stretchSide(wall, "y1", 40), { ...wall, d: 240 });
+  assert.deepEqual(stretchSide(wall, "y0", -40), { ...wall, y: 60, d: 240 }, "樓梯側端拉長，對面牆端 300 不動");
+  assert.deepEqual(stretchSide(wall, "y0", 40), { ...wall, y: 140, d: 160 });
+});
+
+test("stretchSide：拉過頭夾到最短 5 不翻面、拉出框夾在框邊、不認識的 side 原樣", () => {
+  const wall = { kind: "partition", x: 400, y: 100, w: 200, d: 10 };
+  assert.deepEqual(stretchSide(wall, "x1", -500), { ...wall, w: 5 }, "門口側端縮過頭 → 5");
+  assert.deepEqual(stretchSide(wall, "x0", 500), { ...wall, x: 595, w: 5 }, "後牆側端縮過頭 → 停在對邊往回 5");
+  assert.deepEqual(stretchSide(wall, "x0", -500), { ...wall, x: 0, w: 600 }, "拉出後牆 → 夾在 0");
+  assert.deepEqual(stretchSide(wall, "x1", 5000), { ...wall, w: 900 }, "拉出門口側 → 夾在 1300");
+  assert.deepEqual(stretchSide(wall, "y0", -500), { ...wall, y: 0, d: 110 });
+  assert.deepEqual(stretchSide(wall, "y1", 5000), { ...wall, d: 275 }, "夾在 375");
+  assert.deepEqual(stretchSide(wall, "zz", 50), wall);
+  assert.deepEqual(stretchSide({ kind: "partition" }, "x1", 50), { kind: "partition", w: 50 }, "缺欄位當 0");
+});
+
+test("stretchSides：隔層只給長軸兩端、走道廁所四邊、其他沒有", () => {
+  assert.deepEqual(stretchSides({ kind: "partition", w: 200, d: 10 }), ["x0", "x1"]);
+  assert.deepEqual(stretchSides({ kind: "partition", w: 13, d: 200 }), ["y0", "y1"]);
+  assert.deepEqual(stretchSides({ kind: "partition", w: 10, d: 10 }), ["x0", "x1"], "正方形當橫的");
+  assert.deepEqual(stretchSides({ kind: "walkway", w: 80, d: 192 }), ["x0", "x1", "y0", "y1"]);
+  assert.deepEqual(stretchSides({ kind: "bath", w: 137, d: 284 }), ["x0", "x1", "y0", "y1"]);
+  for (const k of ["beam", "stairs", "entry"]) assert.deepEqual(stretchSides({ kind: k, w: 100, d: 100 }), [], k + " 不能拉");
+  assert.deepEqual(stretchSides(null), []);
 });
 
 test("onWalkway：設備壓到同層走道回那塊、貼齊不算、別層／門／隱藏／暫放不算", () => {
