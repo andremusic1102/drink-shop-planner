@@ -32,15 +32,11 @@ def _num(v):
     return int(v) if v == int(v) else round(v, 2)
 
 
-def _q(v):
-    """去重用的量化：四捨五入到 10 cm。兩份方案手拖出來的同一道牆常差幾 cm（正式站實測 275.6 vs 278.04），
-    差 5 cm 以內視為同一道；元件本身保留第一份的原值。"""
-    return int(round(float(v or 0) / 10.0)) * 10
-
-
 def partition_id(floor, x, y, w, d):
-    """穩定的 id：同一道牆（量化後）跑兩次得到同一個 id（重跑不會重複加）。"""
-    key = f"{floor}:{_q(x)}:{_q(y)}:{_q(w)}:{_q(d)}"
+    """穩定的 id：同一組 (floor, x, y, w, d)（cm，取到 0.01）跑兩次得到同一個 id（重跑不會重複加）。
+    不做容差合併：位置差幾 cm 的兩道牆是兩道（正式站 275.6 vs 278.04 那對會並存，人自己刪一道）——
+    容差會把真的不同的牆（276 vs 284）合掉，那道牆就消失了。"""
+    key = f"{floor}:{_num(x)}:{_num(y)}:{_num(w)}:{_num(d)}"
     return "partition-" + hashlib.sha1(key.encode()).hexdigest()[:8]
 
 
@@ -124,11 +120,10 @@ def apply(base, plans, structure, partitions, http_fn=http):
             continue
         body = {"plan": strip_walls(p.get("plan")), "baseRev": p.get("rev", 0)}
         st, res = http_fn("PUT", f"/api/plans/{p['id']}", body, base=base)
-        if st == 409:   # 有人剛存過：拿最新版重做一次
-            _, latest = http_fn("GET", f"/api/plans/{p['id']}", base=base)
-            body = {"plan": strip_walls(latest.get("plan")), "baseRev": latest.get("rev", 0)}
-            st, res = http_fn("PUT", f"/api/plans/{p['id']}", body, base=base)
-        print(f"PUT /api/plans/{p['id']}（{p.get('name')}）→", st, res if st != 200 else f"rev {res['rev']}，移掉 {len(walls)} 道牆")
+        # 409 不在這裡重做：最新版可能多了一道剛加的牆，直接 strip 會把它弄丟（結構那次 PUT 沒收到它）。
+        # 這份不動、標失敗；整支腳本可重跑（partition id 穩定、merge 略過已存在的），重跑會把新牆補進結構再移。
+        print(f"PUT /api/plans/{p['id']}（{p.get('name')}）→", st,
+              ("有人剛存過，這份沒動；重跑一次腳本" if st == 409 else res) if st != 200 else f"rev {res['rev']}，移掉 {len(walls)} 道牆")
         if st != 200:
             ok = False
     return ok
