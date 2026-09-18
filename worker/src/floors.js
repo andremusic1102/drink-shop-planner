@@ -4,8 +4,19 @@
 // 詞彙見 CONTEXT.md：設備（item，屬於某層）、結構元件（element，梁／樓梯／廁所／玄關）、
 // 投影（把別層的東西畫到目前樓層上）。四層同框 1300×375、同一座標系。
 
-import { floorOf, isParked } from "./rules.js";
-export { floorOf, isParked };
+import { floorOf, intersects, FRAME } from "./rules.js";
+export { floorOf };
+
+/**
+ * 暫放（CONTEXT.md）：設備被拖到房子的框外。矩形跟 0..1300×0..375 **完全不相交**才算；
+ * 壓線（一半在框內）不算、照常檢查。不加欄位——位置就是狀態，拖回框內就恢復。
+ * 暫放的不算重疊／間距／神明桌規則、不投影、不匯出、不進縮圖，但仍屬原樓層、仍在清單裡。
+ */
+export function isParked(it) {
+  if (!it) return false;
+  const r = { x: Number(it.x) || 0, y: Number(it.y) || 0, w: Number(it.w) || 0, d: Number(it.d) || 0 };
+  return !intersects(r, FRAME);
+}
 
 export const FLOORS = [1, 2, 3, 4];
 
