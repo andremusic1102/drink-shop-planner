@@ -400,7 +400,9 @@ function renderFloor(f,pn,bad){
   const draggable=new Set(draggableSet(mode(),items,elements,f));
   elementsOn(elements,f).forEach(s=>{ const d=document.createElement('div'); d.className='fx '+(s.kind||'')+(selEl===s.id?' sel':'');
     place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+esc(elLabel(s))+'</span>'; d.dataset.eid=s.id;
-    if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl); pn.appendChild(d); });
+    if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl);
+    else if(mode()==='structure') d.addEventListener('pointerdown',selectOnlyEl);   // 樓梯：不可拖但可選（面板才能複製／搬／刪）
+    pn.appendChild(d); });
   onFloor(items,f).forEach(it=>{ if(it.hidden)return;
     const parked=isParked(it);
     const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' bad shrinebad':'')+(parked?' parked':'');
@@ -503,6 +505,10 @@ function endDrag(){ if(!drag)return; const el=drag.el;
 
 // 結構元件的拖曳：不吸附（量出來的數字用面板打），只夾在圖框內
 let dragEl=null;
+// 只選取、不拖（樓梯）：切到那層、標 sel、更新面板；沒有 pointermove
+function selectOnlyEl(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget, s=elements.find(x=>x.id===el.dataset.eid); if(!s)return;
+  setFloorQuiet(floorOf(s)); selEl=s.id; sel=null; panels.forEach(pn=>pn.querySelectorAll('.fx.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
+  updateSel(); e.preventDefault(); e.stopPropagation(); }
 function startDragEl(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget, s=elements.find(x=>x.id===el.dataset.eid); if(!s)return;
   setFloorQuiet(floorOf(s));
   selEl=s.id; sel=null; panels.forEach(pn=>pn.querySelectorAll('.fx.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
