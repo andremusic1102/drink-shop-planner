@@ -38,6 +38,10 @@
   .planwrap{position:relative;margin:0 auto}
   .plan{position:absolute;background:var(--card);border:3px solid var(--wall);box-shadow:0 2px 10px rgba(0,0,0,.12);box-sizing:content-box}
   .plan.measuring{cursor:crosshair}
+  /* 面板（一格一層）：四層並排時目前那層有色框；樓層標籤掛在面板上緣外 */
+  .plan.cur{box-shadow:0 0 0 3px var(--accent),0 2px 10px rgba(0,0,0,.12)}
+  .plab{position:absolute;left:0;top:-22px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--sub);pointer-events:none;white-space:nowrap}
+  .plan.cur .plab{color:var(--accent)}
   .grid{position:absolute;inset:0;pointer-events:none;
     background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);}
   .fx{position:absolute;pointer-events:none;display:flex;align-items:center;justify-content:center;text-align:center;z-index:1;
@@ -148,6 +152,8 @@
       <button id="backList">☰ 方案列表</button>
       <span class="syncpill off" id="syncPill">● 離線</span>
       <span class="ftabs" id="floorTabs"><button data-floor="1" class="on">1F</button><button data-floor="2">2F</button><button data-floor="3">3F</button><button data-floor="4">4F</button></span>
+      <label class="tgl" title="直向：門口在下、樓梯在右，跟原始 CAD 同向"><input type="checkbox" id="orientToggle" checked> 直向</label>
+      <label class="tgl" title="四層左到右並排；手機上小，關掉只看目前樓層"><input type="checkbox" id="allFloors"> 四層並排</label>
       <label class="tgl"><input type="checkbox" id="projToggle" checked> 投影別層</label>
       <label class="tgl" title="開著只能動梁／樓梯／廁所／玄關，設備鎖住；關著反過來"><input type="checkbox" id="structMode"> 🏗 編輯結構</label>
       <button class="structbtn" id="addBeam">＋ 梁</button>
@@ -175,9 +181,7 @@
     </div>
   </header>
   <main>
-    <div class="stage" id="stage"><div class="planwrap" id="planwrap">
-      <div class="plan" id="plan"><div class="grid" id="gridEl"></div></div>
-    </div></div>
+    <div class="stage" id="stage"><div class="planwrap" id="planwrap"></div></div>
     <div class="panel">
       <div class="sel-info">
         <h2>目前選取</h2>
@@ -223,8 +227,9 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet } from './floors.js';
-const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140;
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf } from './floors.js';
+import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot } from './view.js';
+const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, PANEL_GAP=120;
 const CAT={counter:['var(--counter)','var(--counterB)'],cold:['var(--cold)','var(--coldB)'],water:['var(--water)','var(--waterB)'],
   heat:['var(--heat)','var(--heatB)'],seal:['var(--seal)','var(--sealB)'],shrine:['var(--shrine)','var(--shrineB)'],shelf:['var(--shelf)','var(--shelfB)']};
 // 建築結構（梁／樓梯／廁所／玄關）：一棟房子一份，全部方案共用，從 /api/structure 讀。
@@ -233,9 +238,40 @@ let elements=DEFAULT_STRUCTURE.slice(), structRev=0;
 // 目前看的樓層。只是這台瀏覽器的檢視狀態，不進方案。
 let curFloor=1;
 try{ const f=+localStorage.getItem('drinkshop_floor'); if(FLOORS.includes(f))curFloor=f; }catch(e){}
-function setFloor(f){ curFloor=f; sel=null; selEl=null; mp=null;   // 量測的第一點不跨樓層
+// 安靜切層：只換目前樓層、tab、面板色框，不重畫——拖曳開始時用（重畫會把正在拖的元素換掉）。
+function setFloorQuiet(f){ if(f===curFloor)return; curFloor=f; mp=null;   // 量測的第一點不跨樓層
   try{localStorage.setItem('drinkshop_floor',String(f));}catch(e){}
-  document.querySelectorAll('#floorTabs button').forEach(b=>b.classList.toggle('on',+b.dataset.floor===f)); render(); }
+  document.querySelectorAll('#floorTabs button').forEach(b=>b.classList.toggle('on',+b.dataset.floor===f));
+  panels.forEach((p,pf)=>p.classList.toggle('cur',pf===f)); }
+function setFloor(f){ const same=f===curFloor; curFloor=f; sel=null; selEl=null; mp=null;
+  try{localStorage.setItem('drinkshop_floor',String(f));}catch(e){}
+  document.querySelectorAll('#floorTabs button').forEach(b=>b.classList.toggle('on',+b.dataset.floor===f));
+  if(!same && !view.all){ buildPanels(); fit(); return; }   // 單層檢視：換層＝換面板
+  panels.forEach((p,pf)=>p.classList.toggle('cur',pf===f)); render(); }
+
+// ===== 檢視（CONTEXT.md）：同一份方案怎麼擺到畫面上。只是這台瀏覽器的狀態，不進方案 =====
+// orient 'v' 直向（門口在下、樓梯在右，跟原始 CAD 同向）| 'h' 橫向；all 四層並排 | 單層。
+// 初始值：直向；四層並排照視窗寬（≥720px 才開，跟 .panel 的手機斷點同一個數字）。
+let view={orient:'v',all:window.innerWidth>=720};
+try{ const v=JSON.parse(localStorage.getItem('drinkshop_view')); if(v&&typeof v==='object'){ if(v.orient==='h'||v.orient==='v')view.orient=v.orient; if(typeof v.all==='boolean')view.all=v.all; } }catch(e){}
+function saveView(){ try{localStorage.setItem('drinkshop_view',JSON.stringify(view));}catch(e){} }
+const V=()=>({orient:view.orient,floors:viewFloors()});
+const viewFloors=()=>view.all?FLOORS.slice():[curFloor];
+const isV=()=>view.orient==='v';
+// 面板：Map<樓層, .plan 元素>。畫布（planwrap）裡依檢視放 1 或 4 個。
+const panels=new Map();
+const panelOf=f=>panels.get(Number(f)||1)||panels.get(curFloor);
+function buildPanels(){ planwrap.innerHTML=''; panels.clear();
+  viewFloors().forEach(f=>{ const p=document.createElement('div'); p.className='plan'+(f===curFloor?' cur':'')+(structMode?' structmode':'')+(measuring?' measuring':''); p.dataset.floor=f;
+    const g=document.createElement('div'); g.className='grid'; p.appendChild(g);
+    const lb=document.createElement('div'); lb.className='plab'; lb.textContent=f+'F'; p.appendChild(lb);
+    // 點面板空白：這層變成目前樓層、清掉選取。量測模式下是下一個量測點。
+    p.addEventListener('pointerdown',e=>{ if(measuring){ handleMeasureClick(e); return; }
+      if(e.target===p||e.target.classList.contains('grid')){ sel=null; selEl=null; if(f!==curFloor){ setFloorQuiet(f); } render(); } });
+    panels.set(f,p); planwrap.appendChild(p); }); }
+function setView(patch){ Object.assign(view,patch); saveView();
+  $('#orientToggle').checked=isV(); $('#allFloors').checked=view.all;
+  buildPanels(); fit(); }
 // 當層的設備／結構元件——所有畫圖、吸附、間距、清單都只看這兩個，別層的東西只以投影出現。
 const cur=()=>onFloor(items,curFloor);
 const curEls=()=>elementsOn(elements,curFloor);
@@ -249,7 +285,7 @@ let structMode=false, selEl=null, structDirty=null, structPushing=false, structP
 const mode=()=>structMode?'structure':'items';
 function setStructMode(on){ if(on&&!structLoaded){ $('#structMode').checked=false; toast('建築結構還在載入（或離線），先不能改結構'); return; }
   structMode=!!on; sel=null; selEl=null; mp=null;
-  $('#structMode').checked=structMode; document.body.classList.toggle('structon',structMode); plan.classList.toggle('structmode',structMode); render(); }
+  $('#structMode').checked=structMode; document.body.classList.toggle('structon',structMode); panels.forEach(p=>p.classList.toggle('structmode',structMode)); render(); }
 function elId(kind){ return kind+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function addElement(kind,w,d){ w=Math.min(PLAN_W,Math.max(5,w)); d=Math.min(PLAN_H,Math.max(5,d));
   const e={id:elId(kind),kind,floor:curFloor,name:KIND_LABEL[kind]||kind,x:Math.min(100,PLAN_W-w),y:Math.min(100,PLAN_H-d),w,d};
@@ -293,7 +329,7 @@ const DEFAULT=[
   {n:'餐具架',c:'shelf',w:30,d:60,x:280,y:225,h:165},
 ];
 let items=[], scale=1, sel=null, uid=1;
-const $=s=>document.querySelector(s), plan=$('#plan'), planwrap=$('#planwrap'), stage=$('#stage');
+const $=s=>document.querySelector(s), planwrap=$('#planwrap'), stage=$('#stage');
 const cssv=v=>getComputedStyle(document.documentElement).getPropertyValue(v)||'#888';
 
 function load(){ const s=localStorage.getItem('drinkshop_v1');
@@ -301,43 +337,59 @@ function load(){ const s=localStorage.getItem('drinkshop_v1');
 function reset(){ items=DEFAULT.map(o=>({...o,id:uid++,rot:0,door:false})); sel=null; save(); render(); }
 function save(){ localStorage.setItem('drinkshop_v1',JSON.stringify(items)); if(window.__syncDirty)window.__syncDirty(); }
 
-function fit(){ const availW=stage.clientWidth-32; scale=(availW/PLAN_W)*parseFloat($('#zoom').value);
-  const M=MARGIN*scale, W=PLAN_W*scale, H=PLAN_H*scale;
-  planwrap.style.width=(W+2*M)+'px'; planwrap.style.height=(H+2*M)+'px';
-  plan.style.left=M+'px'; plan.style.top=M+'px'; plan.style.width=W+'px'; plan.style.height=H+'px';
-  $('#gridEl').style.backgroundSize=(50*scale)+'px '+(50*scale)+'px'; render(); }
+// 畫布排版（cm）：直向面板左到右、橫向面板上到下；四層之間留 PANEL_GAP、外圍留 MARGIN。
+function layoutCm(){ const ps=panelSize(V()), n=viewFloors().length, gap=n>1?PANEL_GAP:0;
+  const across=isV();   // 直向：面板沿 x 排；橫向：沿 y 疊
+  const W=across?n*ps.w+(n-1)*gap:ps.w, H=across?ps.h:n*ps.h+(n-1)*gap;
+  return {ps,n,gap,across,W:W+2*MARGIN,H:H+2*MARGIN}; }
+function fit(){ const zoom=parseFloat($('#zoom').value), L=layoutCm();
+  const availW=stage.clientWidth-32, availH=stage.clientHeight-32;
+  // 橫向單層維持原本的「寬度貼合」；其他檢視整張塞進視窗（太小用 zoom 拉）
+  scale=(!isV()&&L.n===1)?(availW/PLAN_W)*zoom:Math.max(0.05,Math.min(availW/L.W,availH/L.H))*zoom;
+  planwrap.style.width=(L.W*scale)+'px'; planwrap.style.height=(L.H*scale)+'px';
+  viewFloors().forEach((f,i)=>{ const p=panelOf(f); if(!p)return;
+    const left=MARGIN+(L.across?i*(L.ps.w+L.gap):0), top=MARGIN+(L.across?0:i*(L.ps.h+L.gap));
+    p.style.left=(left*scale)+'px'; p.style.top=(top*scale)+'px'; p.style.width=(L.ps.w*scale)+'px'; p.style.height=(L.ps.h*scale)+'px';
+    const g=p.querySelector('.grid'); if(g)g.style.backgroundSize=(50*scale)+'px '+(50*scale)+'px'; });
+  render(); }
 
 function fontFor(it,pxW,pxH){ const nlen=Math.max(1,[...(it.n||'')].length);
   const rows=nlen<=3?1:2, cpr=Math.ceil(nlen/rows);
   let nf=Math.min(pxW*0.9/cpr, pxH*0.82/(rows+0.9)); nf=Math.max(7,Math.min(nf,46)); return nf; }
 
 function elLabel(e){ return e.name||KIND_LABEL[e.kind]||e.kind; }
-function renderProjection(){ [...plan.querySelectorAll('.proj')].forEach(e=>e.remove());
+function renderProjection(){ panels.forEach((pn,f)=>{ [...pn.querySelectorAll('.proj')].forEach(e=>e.remove());
   const t=$('#projToggle'); if(t&&!t.checked) return;
-  projection(elements,items,curFloor).forEach(p=>{ const d=document.createElement('div'); d.className='proj '+(p.src==='shrine'?'shrine':p.kind);
-    place(d,p.x,p.y,p.w,p.d); d.textContent=p.floor+'F '+p.name; d.dataset.floor=p.floor; if(p.ref&&p.ref.id!=null)d.dataset.ref=p.ref.id; plan.appendChild(d); }); }
+  projection(elements,items,f).forEach(p=>{ const d=document.createElement('div'); d.className='proj '+(p.src==='shrine'?'shrine':p.kind);
+    place(d,p.x,p.y,p.w,p.d); d.textContent=p.floor+'F '+p.name; d.dataset.floor=p.floor; if(p.ref&&p.ref.id!=null)d.dataset.ref=p.ref.id; pn.appendChild(d); }); }); }
 // 神明桌限制（CONTEXT.md）：全部樓層一起算，回 Map<shrineId, 違規清單>
 function violations(){ const m=new Map(); shrineViolations(items,elements).forEach(v=>{ if(!m.has(v.shrineId))m.set(v.shrineId,[]); m.get(v.shrineId).push(v); }); return m; }
-function ruleText(v){ return v.rule==='beam'?'神明桌在 '+v.floor+'F 的「'+esc(v.name)+'」下方':v.rule==='bath'?'神明桌正上方 '+v.floor+'F 是「'+esc(v.name)+'」':v.floor+'F 的「'+esc(v.name)+'」正面沒有朝門口（圖的右邊）'; }
+function ruleText(v){ return v.rule==='beam'?'神明桌在 '+v.floor+'F 的「'+esc(v.name)+'」下方':v.rule==='bath'?'神明桌正上方 '+v.floor+'F 是「'+esc(v.name)+'」':v.floor+'F 的「'+esc(v.name)+'」正面沒有朝門口那側'; }
 function render(){
-  [...plan.querySelectorAll('.it,.fx,.gap,.gapln,#measLayer')].forEach(e=>e.remove());
-  const draggable=new Set(draggableSet(mode(),items,elements,curFloor));
-  curEls().forEach(s=>{ const d=document.createElement('div'); d.className='fx '+(s.kind||'')+(selEl===s.id?' sel':'');
-    place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+esc(elLabel(s))+'</span>'; d.dataset.eid=s.id;
-    if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl); plan.appendChild(d); });
-  renderProjection();
+  panels.forEach(pn=>[...pn.querySelectorAll('.it,.fx,.gap,.gapln,#measLayer,.measlb')].forEach(e=>e.remove()));
   const bad=violations();
+  panels.forEach((pn,f)=>renderFloor(f,pn,bad));
+  renderProjection();
   // 用 dataset 比對而不是組 selector：id 是任意字串（/api/structure 不限制），含引號會讓 querySelectorAll 炸掉整個 render
   if(bad.size){ const hot=new Set(); bad.forEach((list,shrineId)=>{ hot.add(String(shrineId)); list.forEach(v=>{ if(v.elementId!=null)hot.add(String(v.elementId)); }); });
-    plan.querySelectorAll('.proj,.fx').forEach(p=>{ const k=p.dataset.ref!=null?p.dataset.ref:p.dataset.eid; if(k!=null&&hot.has(String(k)))p.classList.add('bad'); }); }
-  cur().forEach(it=>{ if(it.hidden)return;
+    panels.forEach(pn=>pn.querySelectorAll('.proj,.fx').forEach(p=>{ const k=p.dataset.ref!=null?p.dataset.ref:p.dataset.eid; if(k!=null&&hot.has(String(k)))p.classList.add('bad'); })); }
+  renderGaps(); renderMeasures(); buildList(); updateSel();
+  $('#foot').textContent=curFloor+'F 共 '+cur().length+' 件（全部 '+items.length+' 件）';
+}
+// 畫一層到它的面板：結構元件、設備。別層的東西只以投影出現（renderProjection）。
+function renderFloor(f,pn,bad){
+  const draggable=new Set(draggableSet(mode(),items,elements,f));
+  elementsOn(elements,f).forEach(s=>{ const d=document.createElement('div'); d.className='fx '+(s.kind||'')+(selEl===s.id?' sel':'');
+    place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+esc(elLabel(s))+'</span>'; d.dataset.eid=s.id;
+    if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl); pn.appendChild(d); });
+  onFloor(items,f).forEach(it=>{ if(it.hidden)return;
     const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' bad shrinebad':'');
-    const pxW=it.w*scale, pxH=it.d*scale;
-    if(it.door){ d.style.transform='rotate('+(it.rot||0)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
+    const sr=toScreen(V(),it), pxW=sr.sw*scale, pxH=sr.sh*scale;   // 標籤照畫面上的框算字級
+    if(it.door){ d.style.transform='rotate('+visualRot(V(),it.rot)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
         '<path d="M0 100 A100 100 0 0 1 100 0" fill="none" stroke="'+sb+'" stroke-width="1.6" vector-effect="non-scaling-stroke"/>'+
         '<rect x="94" y="0" width="6" height="100" fill="'+cssv('--card')+'" stroke="'+sb+'" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>';
-    } else if(it.win){ d.style.transform='rotate('+(it.rot||0)+'deg)'; const wb=cssv('--coldB');
+    } else if(it.win){ d.style.transform='rotate('+visualRot(V(),it.rot)+'deg)'; const wb=cssv('--coldB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
         '<rect x="0" y="0" width="100" height="100" fill="'+cssv('--card')+'" stroke="'+wb+'" stroke-width="1.5" vector-effect="non-scaling-stroke"/>'+
         '<line x1="0" y1="50" x2="100" y2="50" stroke="'+wb+'" stroke-width="1.5" vector-effect="non-scaling-stroke"/></svg>';
@@ -355,22 +407,25 @@ function render(){
         d.innerHTML='<span class="nm" style="font-size:'+nf.toFixed(1)+'px">'+esc(it.n)+'</span><span class="dm" style="font-size:'+df.toFixed(1)+'px">'+dims+'</span>';
       }
     }
-    place(d,it.x,it.y,it.w,it.d);
+    positionEl(d,it);
     if(overlaps(it)) d.classList.add('bad');
-    d.dataset.id=it.id; if(draggable.has(it)) d.addEventListener('pointerdown',startDrag); plan.appendChild(d);
+    d.dataset.id=it.id; if(draggable.has(it)) d.addEventListener('pointerdown',startDrag); pn.appendChild(d);
   });
-  renderGaps(); renderMeasures(); buildList(); updateSel();
-  $('#foot').textContent=curFloor+'F 共 '+cur().length+' 件（全部 '+items.length+' 件）';
 }
-function place(el,x,y,w,d){ el.style.left=x*scale+'px'; el.style.top=y*scale+'px'; el.style.width=w*scale+'px'; el.style.height=d*scale+'px'; }
+// 模型矩形 → 面板上的 px（走檢視轉換；標籤永遠水平）
+function place(el,x,y,w,d){ const s=toScreen(V(),{x,y,w,d}); el.style.left=s.sx*scale+'px'; el.style.top=s.sy*scale+'px'; el.style.width=s.sw*scale+'px'; el.style.height=s.sh*scale+'px'; }
+// 門／窗自己帶旋轉（CSS 繞中心轉）：框用模型尺寸、放在畫面框的中心，角度由 visualRot 補上檢視的 90°
+function placeRot(el,it){ const s=toScreen(V(),it), cx=s.sx+s.sw/2, cy=s.sy+s.sh/2;
+  el.style.left=(cx-it.w/2)*scale+'px'; el.style.top=(cy-it.d/2)*scale+'px'; el.style.width=it.w*scale+'px'; el.style.height=it.d*scale+'px'; }
+function positionEl(el,it){ if(it.door||it.win) placeRot(el,it); else place(el,it.x,it.y,it.w,it.d); }
 function skip(a){ return a.door; }
-function overlaps(a){ if(a.door||a.wall||a.win||a.hidden)return false; return cur().some(b=>b!==a && !b.door && !b.wall && !b.win && !b.hidden && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
+function overlaps(a){ if(a.door||a.wall||a.win||a.hidden)return false; return onFloor(items,floorOf(a)).some(b=>b!==a && !b.door && !b.wall && !b.win && !b.hidden && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
 function clampPos(it,x,y){ if(it.door) return [x,y]; return [Math.max(0,Math.min(PLAN_W-it.w,x)),Math.max(0,Math.min(PLAN_H-it.d,y))]; }
 
 function snapPos(it,nx,ny){ let sx=nx,sy=ny;
   if(Math.abs(nx)<SNAP)sx=0; if(Math.abs(nx+it.w-PLAN_W)<SNAP)sx=PLAN_W-it.w;
   if(Math.abs(ny)<SNAP)sy=0; if(Math.abs(ny+it.d-PLAN_H)<SNAP)sy=PLAN_H-it.d;
-  cur().forEach(o=>{ if(o===it||o.door||o.win)return;
+  onFloor(items,floorOf(it)).forEach(o=>{ if(o===it||o.door||o.win)return;
     const vOv=ny<o.y+o.d&&o.y<ny+it.d, hOv=nx<o.x+o.w&&o.x<nx+it.w;
     if(vOv){ if(Math.abs(nx+it.w-o.x)<SNAP)sx=o.x-it.w; else if(Math.abs(nx-(o.x+o.w))<SNAP)sx=o.x+o.w;
       if(Math.abs(nx-o.x)<SNAP)sx=o.x; else if(Math.abs(nx+it.w-(o.x+o.w))<SNAP)sx=o.x+o.w-it.w; }
@@ -379,37 +434,41 @@ function snapPos(it,nx,ny){ let sx=nx,sy=ny;
   return [Math.max(0,Math.min(PLAN_W-it.w,sx)),Math.max(0,Math.min(PLAN_H-it.d,sy))];
 }
 
-function renderGaps(){ [...plan.querySelectorAll('.gap,.gapln')].forEach(e=>e.remove());
+function renderGaps(){ panels.forEach(pn=>[...pn.querySelectorAll('.gap,.gapln')].forEach(e=>e.remove()));
   const g=$('#gaps'); if(!g||!g.checked) return;
-  const here=cur();
+  panels.forEach((pn,f)=>{ const here=onFloor(items,f);
   here.forEach(a=>{ if(a.door||a.win||a.hidden)return; let best=null,bg=1e9;
     here.forEach(b=>{ if(b===a||b.door||b.win||b.hidden)return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
       const gg=b.x-(a.x+a.w); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
-    if(best&&bg>=1){ const y=(Math.max(a.y,best.y)+Math.min(a.y+a.d,best.y+best.d))/2; addGapH(a.x+a.w,best.x,y,bg); } });
+    if(best&&bg>=1){ const y=(Math.max(a.y,best.y)+Math.min(a.y+a.d,best.y+best.d))/2; addGapLine(pn,a.x+a.w,y,best.x,y,bg); } });
   here.forEach(a=>{ if(a.door||a.win||a.hidden)return; let best=null,bg=1e9;
     here.forEach(b=>{ if(b===a||b.door||b.win||b.hidden)return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
       const gg=b.y-(a.y+a.d); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
-    if(best&&bg>=1){ const x=(Math.max(a.x,best.x)+Math.min(a.x+a.w,best.x+best.w))/2; addGapV(x,a.y+a.d,best.y,bg); } });
+    if(best&&bg>=1){ const x=(Math.max(a.x,best.x)+Math.min(a.x+a.w,best.x+best.w))/2; addGapLine(pn,x,a.y+a.d,x,best.y,bg); } });
+  });
 }
-function addGapH(x1,x2,y,v){ const ln=document.createElement('div'); ln.className='gapln';
-  ln.style.left=x1*scale+'px'; ln.style.top=y*scale+'px'; ln.style.width=(x2-x1)*scale+'px'; ln.style.borderTop='1px dashed var(--sel)'; plan.appendChild(ln);
-  const lb=document.createElement('div'); lb.className='gap'; lb.textContent=Math.round(v); lb.style.left=((x1+x2)/2)*scale+'px'; lb.style.top=y*scale+'px'; plan.appendChild(lb); }
-function addGapV(x,y1,y2,v){ const ln=document.createElement('div'); ln.className='gapln';
-  ln.style.left=x*scale+'px'; ln.style.top=y1*scale+'px'; ln.style.height=(y2-y1)*scale+'px'; ln.style.borderLeft='1px dashed var(--sel)'; plan.appendChild(ln);
-  const lb=document.createElement('div'); lb.className='gap'; lb.textContent=Math.round(v); lb.style.left=x*scale+'px'; lb.style.top=((y1+y2)/2)*scale+'px'; plan.appendChild(lb); }
+// 兩個模型點之間的間距線＋數字：線就是一個 w 或 d 為 0 的模型矩形，轉到畫面後看哪邊是 0 決定橫線／直線
+function addGapLine(pn,x1,y1,x2,y2,v){ const s=toScreen(V(),{x:Math.min(x1,x2),y:Math.min(y1,y2),w:Math.abs(x2-x1),d:Math.abs(y2-y1)});
+  const ln=document.createElement('div'); ln.className='gapln'; ln.style.left=s.sx*scale+'px'; ln.style.top=s.sy*scale+'px';
+  if(s.sh<1e-6){ ln.style.width=s.sw*scale+'px'; ln.style.borderTop='1px dashed var(--sel)'; }
+  else { ln.style.height=s.sh*scale+'px'; ln.style.borderLeft='1px dashed var(--sel)'; }
+  pn.appendChild(ln);
+  const lb=document.createElement('div'); lb.className='gap'; lb.textContent=Math.round(v); lb.style.left=(s.sx+s.sw/2)*scale+'px'; lb.style.top=(s.sy+s.sh/2)*scale+'px'; pn.appendChild(lb); }
 
 let drag=null;
 function startDrag(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget,id=+el.dataset.id,it=items.find(i=>i.id===id); if(!it)return;
-  sel=id; plan.querySelectorAll('.it.sel').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
+  setFloorQuiet(floorOf(it));   // 四層並排：在哪個面板拖，那層就是目前樓層（不重畫，正在拖的元素要留著）
+  sel=id; panels.forEach(pn=>pn.querySelectorAll('.it.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
   drag={it,el,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y};
   try{el.setPointerCapture(e.pointerId);}catch(_){}
   el.addEventListener('pointermove',onDrag); el.addEventListener('pointerup',endDrag); el.addEventListener('pointercancel',endDrag);
   buildList(); updateSel(); e.preventDefault(); e.stopPropagation(); }
 function onDrag(e){ if(!drag)return; const it=drag.it;
-  let nx=drag.ox+(e.clientX-drag.sx)/scale, ny=drag.oy+(e.clientY-drag.sy)/scale;
+  const dm=fromScreenDelta(V(),(e.clientX-drag.sx)/scale,(e.clientY-drag.sy)/scale);   // 畫面位移 → 模型位移
+  let nx=drag.ox+dm.dx, ny=drag.oy+dm.dy;
   if(it.door){ /* 門可超出圖面、不吸附 */ }
   else { [nx,ny]=clampPos(it,nx,ny); if($('#snap').checked)[nx,ny]=snapPos(it,nx,ny); }
-  it.x=nx; it.y=ny; drag.el.style.left=nx*scale+'px'; drag.el.style.top=ny*scale+'px';
+  it.x=nx; it.y=ny; positionEl(drag.el,it);
   drag.el.classList.toggle('bad',overlaps(it)); renderGaps(); renderMeasures(); updateSel(); }
 function endDrag(){ if(!drag)return; const el=drag.el;
   el.removeEventListener('pointermove',onDrag); el.removeEventListener('pointerup',endDrag); el.removeEventListener('pointercancel',endDrag);
@@ -418,14 +477,16 @@ function endDrag(){ if(!drag)return; const el=drag.el;
 // 結構元件的拖曳：不吸附（量出來的數字用面板打），只夾在圖框內
 let dragEl=null;
 function startDragEl(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget, s=elements.find(x=>x.id===el.dataset.eid); if(!s)return;
-  selEl=s.id; sel=null; plan.querySelectorAll('.fx.sel').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
+  setFloorQuiet(floorOf(s));
+  selEl=s.id; sel=null; panels.forEach(pn=>pn.querySelectorAll('.fx.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
   dragEl={s,el,sx:e.clientX,sy:e.clientY,ox:s.x,oy:s.y};
   try{el.setPointerCapture(e.pointerId);}catch(_){}
   el.addEventListener('pointermove',onDragEl); el.addEventListener('pointerup',endDragEl); el.addEventListener('pointercancel',endDragEl);
   updateSel(); e.preventDefault(); e.stopPropagation(); }
 function onDragEl(e){ if(!dragEl)return; const s=dragEl.s;
-  const nx=Math.round(Math.max(0,Math.min(PLAN_W-s.w,dragEl.ox+(e.clientX-dragEl.sx)/scale))), ny=Math.round(Math.max(0,Math.min(PLAN_H-s.d,dragEl.oy+(e.clientY-dragEl.sy)/scale)));
-  s.x=nx; s.y=ny; dragEl.el.style.left=nx*scale+'px'; dragEl.el.style.top=ny*scale+'px'; updateSel(); }
+  const dm=fromScreenDelta(V(),(e.clientX-dragEl.sx)/scale,(e.clientY-dragEl.sy)/scale);
+  const nx=Math.round(Math.max(0,Math.min(PLAN_W-s.w,dragEl.ox+dm.dx))), ny=Math.round(Math.max(0,Math.min(PLAN_H-s.d,dragEl.oy+dm.dy)));
+  s.x=nx; s.y=ny; place(dragEl.el,s.x,s.y,s.w,s.d); updateSel(); }
 function endDragEl(){ if(!dragEl)return; const el=dragEl.el;
   el.removeEventListener('pointermove',onDragEl); el.removeEventListener('pointerup',endDragEl); el.removeEventListener('pointercancel',endDragEl);
   dragEl=null; saveStructure(); render(); }
@@ -472,7 +533,7 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
   $('#selBody').innerHTML='<div class="kv"><b>'+esc(it.n)+'</b></div>'+
     '<div class="kv">尺寸 '+it.w+' × '+it.d+(it.h?' × '+it.h:'')+' cm</div>'+
     '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>'+
-    '<div class="kv">距牆 左'+Math.round(it.x)+' 右'+Math.round(PLAN_W-it.x-it.w)+' 上'+Math.round(it.y)+' 下'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
+    '<div class="kv">距牆 後牆'+Math.round(it.x)+' 門口側'+Math.round(PLAN_W-it.x-it.w)+' 樓梯側'+Math.round(it.y)+' 對面牆'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'')+
     (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join(''); }
 function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.filter(i=>i.hidden).length; wrap.innerHTML='<h2>'+curFloor+'F 清單 · 👁隱藏/顯示'+(nh?'（'+nh+'隱藏）':'')+'</h2>';
@@ -482,7 +543,8 @@ function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.fil
     const eye=document.createElement('button'); eye.className='eye'; eye.textContent=it.hidden?'🙈':'👁'; eye.title=it.hidden?'顯示':'隱藏';
     // 結構模式：設備鎖住，清單只能看、不能藏／選（跟畫布上的 .it 一致）
     eye.onclick=(ev)=>{ ev.stopPropagation(); if(structMode)return; it.hidden=!it.hidden; if(it.hidden&&sel===it.id)sel=null; save(); render(); }; c.appendChild(eye);
-    c.onclick=()=>{ if(structMode)return; it.hidden=false; sel=it.id; save(); render(); stage.scrollTo({left:(it.x+MARGIN)*scale-120,top:(it.y+MARGIN)*scale-80,behavior:'smooth'}); }; wrap.appendChild(c); }); }
+    c.onclick=()=>{ if(structMode)return; it.hidden=false; sel=it.id; save(); render();
+      const pn=panelOf(floorOf(it)), sr=toScreen(V(),it); if(pn) stage.scrollTo({left:pn.offsetLeft+sr.sx*scale-120,top:pn.offsetTop+sr.sy*scale-80,behavior:'smooth'}); }; wrap.appendChild(c); }); }
 
 $('#addDoor').onclick=()=>{ const w=Math.max(20,+prompt('門寬(cm)＝開門半徑：','100')||100);
   items.push({id:uid++,n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true,flip:false,floor:curFloor}); sel=uid-1; save(); render(); };
@@ -504,37 +566,43 @@ let measures=[], measuring=false, mp=null;
 function loadM(){ try{measures=JSON.parse(localStorage.getItem('drinkshop_meas'))||[];}catch(e){measures=[];} }
 function saveM(){ localStorage.setItem('drinkshop_meas',JSON.stringify(measures)); if(window.__syncDirty)window.__syncDirty(); }
 function ptPos(p){ if(!p)return [0,0]; if(p.ref!=null){ const it=items.find(i=>i.id===p.ref); if(it) return [it.x+p.cx*it.w, it.y+p.cy*it.d]; } return [p.x||0,p.y||0]; }
-function snapPoint(clx,cly){ const TH=18; let best=null,bd=TH;
+// 面板上的 px（面板左上為原點）→ 吸附後的模型點：先轉成模型座標，再用模型 cm 比距離（門檻 18px 換算成 cm）
+function snapPoint(clx,cly){ const m=toModelPoint(V(),clx/scale,cly/scale), TH=18/scale; let best=null,bd=TH;
   cur().forEach(it=>{ if(it.door||it.win||it.hidden)return; for(let cx=0;cx<=1;cx++)for(let cy=0;cy<=1;cy++){
-    const gx=(it.x+cx*it.w)*scale, gy=(it.y+cy*it.d)*scale, dd=Math.hypot(gx-clx,gy-cly);
-    if(dd<bd){bd=dd;best={ref:it.id,cx,cy,x:it.x+cx*it.w,y:it.y+cy*it.d};} } });
+    const gx=it.x+cx*it.w, gy=it.y+cy*it.d, dd=Math.hypot(gx-m.x,gy-m.y);
+    if(dd<bd){bd=dd;best={ref:it.id,cx,cy,x:gx,y:gy};} } });
   curEls().forEach(s=>{ for(let cx=0;cx<=1;cx++)for(let cy=0;cy<=1;cy++){
-    const gx=(s.x+cx*s.w)*scale, gy=(s.y+cy*s.d)*scale, dd=Math.hypot(gx-clx,gy-cly);
-    if(dd<bd){bd=dd;best={x:s.x+cx*s.w,y:s.y+cy*s.d};} } });
+    const gx=s.x+cx*s.w, gy=s.y+cy*s.d, dd=Math.hypot(gx-m.x,gy-m.y);
+    if(dd<bd){bd=dd;best={x:gx,y:gy};} } });
   if(best) return best;
-  let x=clx/scale, y=cly/scale;
+  let x=m.x, y=m.y;
   if(Math.abs(x)<20)x=0; if(Math.abs(x-PLAN_W)<20)x=PLAN_W;
   if(Math.abs(y)<20)y=0; if(Math.abs(y-PLAN_H)<20)y=PLAN_H;
   return {x:Math.round(x),y:Math.round(y)}; }
-function handleMeasureClick(e){ e.stopPropagation(); e.preventDefault(); const r=plan.getBoundingClientRect();
+function handleMeasureClick(e){ e.stopPropagation(); e.preventDefault();
+  const pn=e.target.closest('.plan'); if(!pn)return; const f=+pn.dataset.floor;
+  if(f!==curFloor){ mp=null; setFloorQuiet(f); }   // 換面板＝換層，第一點作廢
+  const r=pn.getBoundingClientRect();
   const pt=snapPoint(e.clientX-r.left, e.clientY-r.top);
   if(!mp){ mp=pt; renderMeasures(); } else { measures.push({id:uid++,a:mp,b:pt,floor:curFloor}); mp=null; saveM(); render(); } }
 const curM=()=>onFloor(measures,curFloor);
-function renderMeasures(){ const old=plan.querySelector('#measLayer'); if(old)old.remove(); [...plan.querySelectorAll('.measlb')].forEach(e=>e.remove());
+function renderMeasures(){ panels.forEach((pn,f)=>{ const old=pn.querySelector('#measLayer'); if(old)old.remove(); [...pn.querySelectorAll('.measlb')].forEach(e=>e.remove());
   const NS='http://www.w3.org/2000/svg', svg=document.createElementNS(NS,'svg'); svg.id='measLayer';
   svg.setAttribute('style','position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:18;overflow:visible');
   const ac=cssv('--accent'); let html='';
-  curM().forEach(m=>{ const [ax,ay]=m.a?ptPos(m.a):[m.x1,m.y1], [bx,by]=m.b?ptPos(m.b):[m.x2,m.y2];
-    html+='<line x1="'+(ax*scale)+'" y1="'+(ay*scale)+'" x2="'+(bx*scale)+'" y2="'+(by*scale)+'" stroke="'+ac+'" stroke-width="1.5" stroke-dasharray="5 3"/>'+
-      '<circle cx="'+(ax*scale)+'" cy="'+(ay*scale)+'" r="3.2" fill="'+ac+'"/><circle cx="'+(bx*scale)+'" cy="'+(by*scale)+'" r="3.2" fill="'+ac+'"/>'; });
-  if(mp){ const [px,py]=ptPos(mp); html+='<circle cx="'+(px*scale)+'" cy="'+(py*scale)+'" r="4.5" fill="none" stroke="'+ac+'" stroke-width="2"/>'; }
-  svg.innerHTML=html; plan.appendChild(svg);
-  curM().forEach(m=>{ const [ax,ay]=m.a?ptPos(m.a):[m.x1,m.y1], [bx,by]=m.b?ptPos(m.b):[m.x2,m.y2];
-    const mx=(ax+bx)/2*scale, my=(ay+by)/2*scale, dist=Math.round(Math.hypot(bx-ax,by-ay));
+  const S=(x,y)=>{ const p=toScreenPoint(V(),x,y); return [p.sx*scale,p.sy*scale]; };
+  const here=onFloor(measures,f);
+  here.forEach(m=>{ const [ax,ay]=m.a?ptPos(m.a):[m.x1,m.y1], [bx,by]=m.b?ptPos(m.b):[m.x2,m.y2]; const A=S(ax,ay), B=S(bx,by);
+    html+='<line x1="'+A[0]+'" y1="'+A[1]+'" x2="'+B[0]+'" y2="'+B[1]+'" stroke="'+ac+'" stroke-width="1.5" stroke-dasharray="5 3"/>'+
+      '<circle cx="'+A[0]+'" cy="'+A[1]+'" r="3.2" fill="'+ac+'"/><circle cx="'+B[0]+'" cy="'+B[1]+'" r="3.2" fill="'+ac+'"/>'; });
+  if(mp&&f===curFloor){ const [px,py]=ptPos(mp); const P=S(px,py); html+='<circle cx="'+P[0]+'" cy="'+P[1]+'" r="4.5" fill="none" stroke="'+ac+'" stroke-width="2"/>'; }
+  svg.innerHTML=html; pn.appendChild(svg);
+  here.forEach(m=>{ const [ax,ay]=m.a?ptPos(m.a):[m.x1,m.y1], [bx,by]=m.b?ptPos(m.b):[m.x2,m.y2];
+    const M=S((ax+bx)/2,(ay+by)/2), dist=Math.round(Math.hypot(bx-ax,by-ay));
     const lb=document.createElement('div'); lb.className='gap measlb'; lb.style.borderColor=ac; lb.style.color=ac; lb.style.zIndex='19';
-    lb.style.left=mx+'px'; lb.style.top=my+'px'; lb.style.pointerEvents='auto'; lb.style.cursor='pointer'; lb.title='點一下刪除這條'; lb.textContent=dist;
-    lb.onclick=(ev)=>{ ev.stopPropagation(); measures=measures.filter(z=>z.id!==m.id); saveM(); render(); }; plan.appendChild(lb); }); }
-$('#measure').onclick=()=>{ measuring=!measuring; mp=null; $('#measure').classList.toggle('p',measuring); plan.classList.toggle('measuring',measuring); render(); };
+    lb.style.left=M[0]+'px'; lb.style.top=M[1]+'px'; lb.style.pointerEvents='auto'; lb.style.cursor='pointer'; lb.title='點一下刪除這條'; lb.textContent=dist;
+    lb.onclick=(ev)=>{ ev.stopPropagation(); measures=measures.filter(z=>z.id!==m.id); saveM(); render(); }; pn.appendChild(lb); }); }); }
+$('#measure').onclick=()=>{ measuring=!measuring; mp=null; $('#measure').classList.toggle('p',measuring); panels.forEach(pn=>pn.classList.toggle('measuring',measuring)); render(); };
 $('#clearM').onclick=()=>{ if(curM().length&&confirm('清除 '+curFloor+'F 的所有量測線？')){ const gone=new Set(curM().map(m=>m.id)); measures=measures.filter(m=>!gone.has(m.id)); mp=null; saveM(); render(); } };
 const od=$('#objDlg'); $('#addObj').onclick=()=>od.showModal(); $('#oCancel').onclick=()=>od.close();
 $('#oOk').onclick=()=>{ const n=$('#oName').value.trim()||'物件',w=+$('#oW').value||60,d=+$('#oD').value||60;
@@ -563,7 +631,8 @@ $('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉這份方
 $('#zoom').oninput=fit; $('#gaps').onchange=renderGaps;
 $('#togglePanel').onclick=()=>{ const a=document.querySelector('.app'); a.classList.toggle('nopanel'); $('#togglePanel').textContent=a.classList.contains('nopanel')?'◧ 顯示清單':'◧ 隱藏清單'; setTimeout(fit,10); };
 document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT')return; if(e.key==='r'||e.key==='R')rotate(); if(e.key==='d'||e.key==='D')dup(); if(e.key==='Delete'||e.key==='Backspace')del(); });
-plan.addEventListener('pointerdown',e=>{ if(measuring){ handleMeasureClick(e); return; } if(e.target===plan||e.target.classList.contains('grid')){sel=null;selEl=null;render();} });
+// 點面板空白／量測點擊的處理掛在每個面板上（buildPanels）；這裡只處理點到畫布空白（面板之外）
+planwrap.addEventListener('pointerdown',e=>{ if(e.target===planwrap){ sel=null; selEl=null; render(); } });
 // ===== 分享網址（改為直接複製本站網址）與匯出 =====
 $('#share').onclick=()=>{ const u=location.origin+location.pathname; if(navigator.clipboard)navigator.clipboard.writeText(u).catch(()=>{});
   const b=$('#share'); const t=b.textContent; b.textContent='✓ 已複製'; setTimeout(()=>b.textContent=t,1500);
@@ -609,6 +678,11 @@ $('#png').onclick=exportPNG; $('#pdf').onclick=exportPDF;
 
 window.addEventListener('resize',fit);
 loadM();
+// 檢視開關：直向／橫向、四層並排／單層。四層並排時投影預設關（四層都看得到，不用疊）
+$('#orientToggle').checked=isV(); $('#allFloors').checked=view.all; $('#projToggle').checked=!view.all;
+$('#orientToggle').onchange=e=>setView({orient:e.target.checked?'v':'h'});
+$('#allFloors').onchange=e=>{ $('#projToggle').checked=!e.target.checked; setView({all:e.target.checked}); };
+buildPanels();
 setFloor(curFloor);   // 同步 tab 樣式（上次看的樓層記在這台瀏覽器）
 
 // ===== 建築結構：開機讀一次；讀不到就用預設殼 =====
@@ -673,7 +747,7 @@ loadStructure();
   }
 
   // 追蹤是否正在拖曳（避免同步時打斷）
-  plan.addEventListener('pointerdown',()=>{dragging=true;},true);
+  planwrap.addEventListener('pointerdown',()=>{dragging=true;},true);
   window.addEventListener('pointerup',()=>{dragging=false;},true);
   window.addEventListener('pointercancel',()=>{dragging=false;},true);
 
