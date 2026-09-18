@@ -88,5 +88,37 @@ export function moveTo(obj, toFloor) {
   return { ...obj, floor: Number(toFloor) || 1 };
 }
 
+/** 複製整層時會跟著走的結構元件種類：廁所、房間隔層。梁／樓梯每層本來就有、玄關只有 1F，不複製。 */
+export const COPYABLE_KINDS = ["bath", "partition"];
+
+/**
+ * 複製整層（2026-09-18 定案）：先清掉目標層的全部設備與 bath／partition，再把來源層的設備與 bath／partition
+ * 複製過去（位置不變、新 id）。回傳 {items, elements} 新陣列；來源層與其他層原樣。
+ * from === to 或樓層不在 FLOORS 裡 → 原陣列不動。
+ * nextItemId()／nextElId(kind) 由呼叫端提供（前端是 uid++ 與 elId(kind)）。
+ */
+export function copyFloor(items, elements, from, to, nextItemId, nextElId) {
+  const f = Number(from), t = Number(to);
+  const its = Array.isArray(items) ? items : [], els = Array.isArray(elements) ? elements : [];
+  if (f === t || !FLOORS.includes(f) || !FLOORS.includes(t)) return { items: its, elements: els };
+  const keptItems = its.filter((it) => floorOf(it) !== t);
+  const keptEls = els.filter((e) => floorOf(e) !== t || !COPYABLE_KINDS.includes(e.kind));
+  const newItems = cur(its, f).map((it) => cloneTo(it, t, nextItemId()));
+  const newEls = elementsOn(els, f).filter((e) => COPYABLE_KINDS.includes(e.kind)).map((e) => cloneTo(e, t, nextElId(e.kind)));
+  return { items: keptItems.concat(newItems), elements: keptEls.concat(newEls) };
+}
+
+/** 多選複製：ids 裡的設備各自 cloneTo（同層各偏移 30、跨層同位置），順序照 items 原本的順序。回傳新設備陣列（不含原本的）。 */
+export function cloneMany(items, ids, toFloor, nextItemId) {
+  const want = new Set(Array.isArray(ids) ? ids : []);
+  return (Array.isArray(items) ? items : []).filter((it) => want.has(it.id)).map((it) => cloneTo(it, toFloor, nextItemId()));
+}
+
+/** 多選搬層：ids 裡的設備只改 floor，其他原樣。回傳整個新陣列。 */
+export function moveMany(items, ids, toFloor) {
+  const want = new Set(Array.isArray(ids) ? ids : []);
+  return (Array.isArray(items) ? items : []).map((it) => (want.has(it.id) ? moveTo(it, toFloor) : it));
+}
+
 /** 結構元件種類的中文名（畫標籤用）。 */
 export const KIND_LABEL = { beam: "梁", stairs: "樓梯", bath: "廁所", entry: "玄關", partition: "房間隔層" };
