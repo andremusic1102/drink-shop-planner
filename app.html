@@ -25,6 +25,16 @@
   h1{font-size:16px;margin:0;font-weight:650}
   .hint{font-size:11.5px;color:var(--sub);font-family:var(--mono)}
   .bar{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
+  /* 「⋯ 更多」：少用、或按錯會痛的按鈕收在這裡（分享／匯出／重設／清量距／隱藏側欄） */
+  .more{position:relative}
+  .more>summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12.5px;background:var(--card);color:var(--sub);user-select:none}
+  .more>summary::-webkit-details-marker{display:none}
+  .more[open]>summary{border-color:var(--accent);color:var(--accent)}
+  .more .menu{position:absolute;top:calc(100% + 4px);left:0;z-index:50;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.14);padding:6px;display:flex;flex-direction:column;gap:4px;min-width:150px}
+  .more .menu button{justify-content:flex-start;width:100%}
+  /* 側欄的設備清單預設收合：要隱藏特定東西再打開 */
+  .list h2{cursor:pointer;user-select:none}
+  .list.closed .chip{display:none}
   button{font-family:var(--sans);font-size:13px;border:1px solid var(--line);background:var(--card);color:var(--ink);
     border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:5px}
   button:hover{border-color:var(--accent)}
@@ -160,7 +170,6 @@
       <button class="structbtn" id="addBath">＋ 廁所</button>
       <button class="structbtn" id="addStairs">＋ 樓梯</button>
       <button class="p itembtn" id="addDoor">＋ 門</button>
-      <button class="itembtn" id="addWin">＋ 窗戶</button>
       <button class="itembtn" id="addWall">＋ 隔間牆</button>
       <button class="itembtn" id="addObj">＋ 自訂物件</button>
       <button id="dup">⧉ 複製</button>
@@ -169,14 +178,16 @@
       <button class="warn" id="del">🗑 刪除</button>
       <label class="tgl"><input type="checkbox" id="snap" checked> 貼齊(緊貼歸零)</label>
       <label class="tgl"><input type="checkbox" id="gaps" checked> 顯示間距</label>
-      <button id="togglePanel">◧ 隱藏清單</button>
       <button id="measure">📏 量距</button>
-      <button id="clearM">清量距</button>
-      <button class="p" id="share">🔗 分享網址</button>
-      <button id="png">🖼 PNG</button>
-      <button id="pdf">🖨 PDF</button>
-      <button id="io">匯出/匯入</button>
-      <button class="warn" id="reset">重設擺法</button>
+      <details class="more" id="more"><summary>⋯ 更多</summary><div class="menu">
+        <button id="clearM">清量距</button>
+        <button id="togglePanel">◧ 隱藏側欄</button>
+        <button id="share">🔗 分享網址</button>
+        <button id="png">🖼 PNG</button>
+        <button id="pdf">🖨 PDF</button>
+        <button id="io">匯出/匯入</button>
+        <button class="warn" id="reset">重設擺法</button>
+      </div></details>
       <span class="zoom">🔍 <input type="range" id="zoom" min="0.4" max="2.6" step="0.05" value="1"></span>
     </div>
   </header>
@@ -530,13 +541,25 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
       '<div class="kv">長 <input id="wl" type="number" min="10" step="5" value="'+it.w+'"> · 厚 <input id="wt" type="number" min="4" step="1" value="'+it.d+'"> cm</div>'+
       '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>';
     const wl=$('#wl'),wt=$('#wt'); if(wl)wl.onchange=()=>{it.w=Math.max(10,+wl.value||10);save();render();}; if(wt)wt.onchange=()=>{it.d=Math.max(4,+wt.value||10);save();render();}; return; }
-  $('#selBody').innerHTML='<div class="kv"><b>'+esc(it.n)+'</b></div>'+
-    '<div class="kv">尺寸 '+it.w+' × '+it.d+(it.h?' × '+it.h:'')+' cm</div>'+
+  // 一般設備：名稱與長／寬／高可改（匯入的家具靠這裡修尺寸）；位置只能拖，不開 X／Y
+  const num=(id,v,min)=>'<input id="'+id+'" type="number" min="'+min+'" step="1" value="'+(v==null||v===''?'':Math.round(v))+'" style="width:58px">';
+  $('#selBody').innerHTML='<div class="kv"><input id="iname" value="'+esc(it.n)+'" style="width:170px;font-weight:700"></div>'+
+    '<div class="kv">長 '+num('iw',it.w,5)+' 寬 '+num('id',it.d,5)+' 高 '+num('ih',it.h||'',0)+' cm</div>'+
     '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>'+
     '<div class="kv">距牆 後牆'+Math.round(it.x)+' 門口側'+Math.round(PLAN_W-it.x-it.w)+' 樓梯側'+Math.round(it.y)+' 對面牆'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'')+
-    (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join(''); }
-function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.filter(i=>i.hidden).length; wrap.innerHTML='<h2>'+curFloor+'F 清單 · 👁隱藏/顯示'+(nh?'（'+nh+'隱藏）':'')+'</h2>';
+    (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join('');
+  const nm=$('#iname'); if(nm)nm.onchange=()=>{ const v=nm.value.trim(); if(v){ it.n=v; save(); render(); } else nm.value=it.n; };
+  const bindDim=(id,k,min)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const raw=el.value.trim();
+    if(k==='h'&&raw===''){ delete it.h; save(); render(); return; }   // 高度可空
+    const v=Math.max(min,Math.round(+raw||0)); it[k]=v; if(k!=='h')[it.x,it.y]=clampPos(it,it.x,it.y); save(); render(); }; };
+  bindDim('iw','w',5); bindDim('id','d',5); bindDim('ih','h',0); }
+// 清單預設收合（要隱藏特定東西再打開）；開合狀態記在這台瀏覽器
+let listOpen=false; try{ listOpen=localStorage.getItem('drinkshop_list')==='open'; }catch(e){}
+function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.filter(i=>i.hidden).length; wrap.classList.toggle('closed',!listOpen);
+  wrap.innerHTML='<h2>'+(listOpen?'▾':'▸')+' '+curFloor+'F 清單 '+here.length+' 件'+(nh?'（'+nh+'隱藏）':'')+(listOpen?' · 👁隱藏/顯示':'')+'</h2>';
+  wrap.querySelector('h2').onclick=()=>{ listOpen=!listOpen; try{localStorage.setItem('drinkshop_list',listOpen?'open':'closed');}catch(e){} buildList(); };
+  if(!listOpen) return;
   here.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(it.win?['var(--cold)','var(--coldB)']:(CAT[it.c]||CAT.shelf)); const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':''); if(it.hidden)c.style.opacity='.45';
     c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span><span>'+(it.door?'門 '+it.w:(it.win?'窗 '+it.w:esc(it.n)))+
       '</span><span style="margin-left:auto;color:var(--sub);font-family:var(--mono);font-size:11px">'+it.w+'×'+it.d+'</span>';
@@ -550,8 +573,7 @@ $('#addDoor').onclick=()=>{ const w=Math.max(20,+prompt('門寬(cm)＝開門半�
   items.push({id:uid++,n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true,flip:false,floor:curFloor}); sel=uid-1; save(); render(); };
 $('#addWall').onclick=()=>{ const L=Math.max(20,+prompt('隔間牆長度(cm)：','200')||200);
   items.push({id:uid++,n:'隔間牆',c:'wall',w:L,d:10,x:80,y:80,h:0,rot:0,wall:true,floor:curFloor}); sel=uid-1; save(); render(); };
-$('#addWin').onclick=()=>{ const w=Math.max(20,+prompt('窗寬(cm)：','120')||120);
-  items.push({id:uid++,n:'窗戶',c:'win',w:w,d:16,x:200,y:0,h:0,rot:0,win:true,floor:curFloor}); sel=uid-1; save(); render(); };
+// 「＋ 窗戶」2026-09-17 拿掉（不需要）；舊方案裡已有的窗戶照常顯示、可選可刪，只是不能再新增
 $('#floorTabs').onclick=(e)=>{ const b=e.target.closest('button'); if(b&&b.dataset.floor) setFloor(+b.dataset.floor); };
 $('#projToggle').onchange=renderProjection;
 $('#structMode').onchange=(e)=>setStructMode(e.target.checked);
@@ -629,7 +651,10 @@ $('#rot').onclick=rotate; $('#rot2').onclick=rotate; $('#dup').onclick=dup; $('#
 $('#hide2').onclick=()=>{ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(it){it.hidden=true;sel=null;save();render();} };
 $('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉這份方案目前的調整）')) reset(); };
 $('#zoom').oninput=fit; $('#gaps').onchange=renderGaps;
-$('#togglePanel').onclick=()=>{ const a=document.querySelector('.app'); a.classList.toggle('nopanel'); $('#togglePanel').textContent=a.classList.contains('nopanel')?'◧ 顯示清單':'◧ 隱藏清單'; setTimeout(fit,10); };
+$('#togglePanel').onclick=()=>{ const a=document.querySelector('.app'); a.classList.toggle('nopanel'); $('#togglePanel').textContent=a.classList.contains('nopanel')?'◧ 顯示側欄':'◧ 隱藏側欄'; setTimeout(fit,10); };
+// 「⋯ 更多」選單：按了裡面任何一顆就收起來
+$('#more').querySelector('.menu').addEventListener('click',e=>{ if(e.target.closest('button')) $('#more').open=false; });
+document.addEventListener('pointerdown',e=>{ const m=$('#more'); if(m.open&&!m.contains(e.target)) m.open=false; });
 document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT')return; if(e.key==='r'||e.key==='R')rotate(); if(e.key==='d'||e.key==='D')dup(); if(e.key==='Delete'||e.key==='Backspace')del(); });
 // 點面板空白／量測點擊的處理掛在每個面板上（buildPanels）；這裡只處理點到畫布空白（面板之外）
 planwrap.addEventListener('pointerdown',e=>{ if(e.target===planwrap){ sel=null; selEl=null; render(); } });
