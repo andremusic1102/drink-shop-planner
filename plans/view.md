@@ -1,5 +1,5 @@
 ---
-contract_commit: "adb3a8a7c1f2624580b6acdd1af5a2eed7f04d10"
+contract_commit: "655965fa51e56bec219aadd9c3571fe11de970f2"
 ---
 
 # 直向檢視 + 四層並排 — 計畫
