@@ -151,6 +151,16 @@ test("PUT /api/structure kind partition → 200", async () => {
   assert.ok(JSON.parse(ins.args[2]).elements.some((e) => e.kind === "partition"), "partition 原樣寫進去");
 });
 
+test("PUT /api/structure kind walkway → 200，原樣寫進去", async () => {
+  const el = { id: "walkway-2-1", kind: "walkway", floor: 2, name: "走道", x: 582, y: 0, w: 80, d: 82 };
+  const ok = env([]);
+  const res = await worker.fetch(putStructure({ structure: { elements: [el] }, baseRev: 0 }), ok, {});
+  assert.equal(res.status, 200);
+  const ins = ok.DB.calls.find((c) => /INSERT OR IGNORE INTO plans/.test(c.sql) && c.args.length);
+  assert.ok(ins, "走到 INSERT");
+  assert.deepEqual(JSON.parse(ins.args[2]).elements, [el], "walkway 原樣寫進去");
+});
+
 test("縮圖畫出 partition", async () => {
   const structure = { id: "structure", name: "建築結構", rev: 3, ts: 1, plan: JSON.stringify({ elements: [
     { id: "partition-1", kind: "partition", floor: 1, name: "房間隔層", x: 640, y: 100, w: 10, d: 275 },

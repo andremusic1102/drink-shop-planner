@@ -58,6 +58,7 @@
     font-size:11px;color:var(--sub);font-family:var(--mono);border:1px dashed var(--shellB);background:var(--shell);border-radius:2px}
   .fx.stairs{background:repeating-linear-gradient(90deg,var(--shell),var(--shell) 5px,var(--shellB) 5px,var(--shellB) 5.6px)}
   .fx.partition{background:var(--wall);border:1px solid var(--wall);color:var(--card);z-index:4}   /* 房間隔層：深色實心，跟舊的隔間牆設備同色 */
+  .fx.walkway{background:repeating-linear-gradient(45deg,transparent,transparent 6px,var(--shellB) 6px,var(--shellB) 7px);border:1px dashed var(--sub);z-index:2}   /* 走道：空心斜線，設備壓到會紅框 */
   .plan.structmode .fx.stairs{cursor:default;outline-style:dotted}   /* 樓梯固定不可拖 */
   .it{position:absolute;border:1.5px solid var(--counterB);background:var(--counter);border-radius:3px;cursor:grab;z-index:10;
     display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;
@@ -175,6 +176,7 @@
       <button class="structbtn" id="addBeam">＋ 梁</button>
       <button class="structbtn" id="addBath">＋ 廁所</button>
       <button class="structbtn" id="addPartition" title="房子的隔間，全部方案共用；厚 10 cm">＋ 房間隔層</button>
+      <button class="structbtn" id="addWalkway" title="樓梯前後要留的通道，全部方案共用；設備壓到會紅框">＋ 走道</button>
       <label class="tgl itembtn" title="開著：點一件加一件、再點取消；桌機也可以 Shift+點"><input type="checkbox" id="multiToggle"> 多選</label>
       <button class="p itembtn" id="addDoor">＋ 門</button>
       <button class="itembtn" id="addObj">＋ 自訂物件</button>
@@ -244,7 +246,7 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany, copyFloor, COPYABLE_KINDS } from './floors.js';
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany, copyFloor, COPYABLE_KINDS, onWalkway } from './floors.js';
 import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot } from './view.js';
 // MARGIN：畫布四周的空白；門口側（+x 之外）留 ENTRY_MARGIN，暫放時放得下最長的家具（DWG 那批 274）
 const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, ENTRY_MARGIN=300, PANEL_GAP=120;
@@ -441,7 +443,7 @@ function renderFloor(f,pn,bad){
     }
     if(parked&&!it.door&&!it.win){ const tag=document.createElement('span'); tag.className='ptag'; tag.textContent=f+'F 暫放'; d.appendChild(tag); }   // innerHTML 都寫完了才掛角標
     positionEl(d,it);
-    if(overlaps(it)) d.classList.add('bad');
+    if(overlaps(it)||onWalkway(it,elements)) d.classList.add('bad');
     d.dataset.id=it.id; if(draggable.has(it)) d.addEventListener('pointerdown',startDrag); pn.appendChild(d);
   });
 }
@@ -521,7 +523,7 @@ function onDrag(e){ if(!drag)return; const it=drag.it;
   it.x=nx; it.y=ny; positionEl(drag.el,it);
   const ddx=nx-drag.ox, ddy=ny-drag.oy;   // 被拖那件（夾＋吸附後）的實際位移，套到群組其他件
   drag.others.forEach(o=>{ let [ox2,oy2]=[o.ox+ddx,o.oy+ddy]; if(!o.it.door)[ox2,oy2]=clampPos(o.it,ox2,oy2); o.it.x=ox2; o.it.y=oy2; if(o.el)positionEl(o.el,o.it); });
-  drag.el.classList.toggle('bad',overlaps(it)); renderGaps(); renderMeasures(); updateSel(); }
+  drag.el.classList.toggle('bad',overlaps(it)||!!onWalkway(it,elements)); renderGaps(); renderMeasures(); updateSel(); }
 function endDrag(){ if(!drag)return; const el=drag.el, d=drag;
   el.removeEventListener('pointermove',onDrag); el.removeEventListener('pointerup',endDrag); el.removeEventListener('pointercancel',endDrag);
   drag=null;
@@ -613,6 +615,7 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
     (isParked(it)?'<div class="kv" style="color:var(--sub)">暫放中（在框外）：不算重疊、不套規則、不匯出；拖回框內就恢復</div>':
       '<div class="kv">距牆 後牆'+Math.round(it.x)+' 門口側'+Math.round(PLAN_W-it.x-it.w)+' 樓梯側'+Math.round(it.y)+' 對面牆'+Math.round(PLAN_H-it.y-it.d)+'</div>')+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'')+
+    (()=>{ const w=onWalkway(it,elements); return w?'<div class="kv" style="color:var(--sel)">⚠ 壓到走道「'+esc(elLabel(w))+'」</div>':''; })()+
     (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join('');
   const nm=$('#iname'); if(nm)nm.onchange=()=>{ const v=nm.value.trim(); if(v){ it.n=v; save(); render(); } else nm.value=it.n; };
   // 長寬夾在圖框內（跟結構元件面板一樣）：超過會讓 clampPos 的範圍變負、距牆出現負值
@@ -658,6 +661,7 @@ $('#projToggle').onchange=renderProjection;
 $('#structMode').onchange=(e)=>setStructMode(e.target.checked);
 $('#addBeam').onclick=()=>{ const w=Math.max(10,+prompt('梁寬(cm)：','30')||30); addElement('beam',PLAN_W,w); };
 $('#addBath').onclick=()=>addElement('bath',140,200);
+$('#addWalkway').onclick=()=>addElement('walkway',80,80);
 // 「＋ 樓梯」2026-09-17 拿掉：樓梯不會動了（結構模式也不可拖，見 draggableSet）；面板仍可打數字、刪、複製到別層
 $('#addPartition').onclick=()=>{ const L=Math.max(20,+prompt('房間隔層長度(cm)：','200')||200); addElement('partition',L,10); };
 function flip(){ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return; it.flip=!it.flip; save(); render(); }
@@ -761,7 +765,7 @@ function buildSVG(){ const s=1.7, L=layoutCm(), floors=viewFloors();
     g+='<g data-floor="'+f+'" transform="translate('+ln(ox)+' '+ln(oy)+')">';
     g+='<text x="0" y="'+(-6*s).toFixed(1)+'" font-family="monospace" font-size="'+Math.round(10*s)+'" font-weight="700" fill="#111">'+f+'F</text>';
     g+='<rect x="0" y="0" width="'+ln(L.ps.w)+'" height="'+ln(L.ps.h)+'" fill="none" stroke="'+ink+'" stroke-width="3"/>';
-    elementsOn(elements,f).forEach(o=>{ const r=R(o); g+='<rect x="'+px(r.sx)+'" y="'+px(r.sy)+'" width="'+ln(r.sw)+'" height="'+ln(r.sh)+'" fill="'+shc+'" stroke="'+line+'"/>'+
+    elementsOn(elements,f).forEach(o=>{ const r=R(o); g+='<rect x="'+px(r.sx)+'" y="'+px(r.sy)+'" width="'+ln(r.sw)+'" height="'+ln(r.sh)+'" fill="'+(o.kind==='walkway'?'none':shc)+'" stroke="'+line+'"'+(o.kind==='walkway'?' stroke-dasharray="4 3"':'')+'/>'+
       '<text x="'+px(r.sx+r.sw/2)+'" y="'+px(r.sy+r.sh/2)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" dominant-baseline="middle" fill="'+sub+'">'+esc(elLabel(o))+'</text>'; });
     onFloor(items,f).forEach(it=>{ if(it.hidden||isParked(it))return; const r=R(it), cx=r.sx+r.sw/2, cy=r.sy+r.sh/2, cxp=px(cx), cyp=px(cy);   // 暫放的不匯出
       if(it.door||it.win){ // 門窗：模型尺寸的框放在畫面框中心，繞中心轉 visualRot（跟畫面上的 placeRot 同一招）

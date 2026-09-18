@@ -88,8 +88,8 @@ export function moveTo(obj, toFloor) {
   return { ...obj, floor: Number(toFloor) || 1 };
 }
 
-/** 複製整層時會跟著走的結構元件種類：廁所、房間隔層。梁／樓梯每層本來就有、玄關只有 1F，不複製。 */
-export const COPYABLE_KINDS = ["bath", "partition"];
+/** 複製整層時會跟著走的結構元件種類：廁所、房間隔層、走道。梁／樓梯每層本來就有、玄關只有 1F，不複製。 */
+export const COPYABLE_KINDS = ["bath", "partition", "walkway"];
 
 /**
  * 複製整層（2026-09-18 定案）：先清掉目標層的全部設備與 bath／partition，再把來源層的設備與 bath／partition
@@ -121,4 +121,18 @@ export function moveMany(items, ids, toFloor) {
 }
 
 /** 結構元件種類的中文名（畫標籤用）。 */
-export const KIND_LABEL = { beam: "梁", stairs: "樓梯", bath: "廁所", entry: "玄關", partition: "房間隔層" };
+export const KIND_LABEL = { beam: "梁", stairs: "樓梯", bath: "廁所", entry: "玄關", partition: "房間隔層", walkway: "走道" };
+
+/**
+ * 走道（2026-09-18 定案）：樓梯前後與梯段下方要留的通道，設備壓到算違規（只警告不擋存，跟重疊同一條紅框）。
+ * 門／窗／牆／隱藏／暫放的不算；相交用半開區間（貼齊不算壓到），跟 rules.js 的 intersects 同一種算法。
+ * 回傳壓到的走道元件，沒有就 null。
+ */
+export function onWalkway(it, elements) {
+  if (!it || it.door || it.win || it.wall || it.hidden || isParked(it)) return null;
+  const r = { x: Number(it.x) || 0, y: Number(it.y) || 0, w: Number(it.w) || 0, d: Number(it.d) || 0 };
+  for (const e of elementsOn(elements, floorOf(it))) {
+    if (e.kind === "walkway" && intersects(r, e)) return e;
+  }
+  return null;
+}

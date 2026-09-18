@@ -35,7 +35,8 @@ const PLAN_H = 375;
 // （加上預設的玄關、原本就有的樓梯）只會送這五種；其他值一律當壞 body 回 400，
 // 因為 kind 會被寫進縮圖 SVG 的屬性，不能讓任意字串進 D1。
 // partition（房間隔層）2026-09-17 加：隔間牆從方案設備搬進結構，全部方案共用。
-const ELEMENT_KINDS = ["beam", "stairs", "bath", "entry", "partition"];
+// walkway（走道）2026-09-18 加：樓梯前後與梯段下方要留的 80 cm 通道，設備壓到會警告。
+const ELEMENT_KINDS = ["beam", "stairs", "bath", "entry", "partition", "walkway"];
 
 // XML 屬性值跳脫（& < > " '）。縮圖 SVG 插進屬性的字串都要過這裡 ——
 // 即使 D1 裡已經有 normalizeElements 上線前寫入的舊資料，也不會跳出屬性。
@@ -107,9 +108,9 @@ function thumbSvg(plan, elements = DEFAULT_STRUCTURE) {
     `<rect width="${W}" height="${H}" fill="#ffffff"/>`,
   ];
   for (const e of els) {
-    // 房間隔層畫成深色實心（跟前端牆同色），其他殼是淡灰；梁是斜線
-    const fill = e.kind === "beam" ? "url(#beam)" : e.kind === "partition" ? "#2f3a3a" : "#e9ecec";
-    const stroke = e.kind === "partition" ? "#2f3a3a" : "#c6d0ce";
+    // 房間隔層畫成深色實心（跟前端牆同色），走道空心虛框，其他殼是淡灰；梁是斜線
+    const fill = e.kind === "beam" ? "url(#beam)" : e.kind === "partition" ? "#2f3a3a" : e.kind === "walkway" ? "none" : "#e9ecec";
+    const stroke = e.kind === "partition" ? "#2f3a3a" : e.kind === "walkway" ? "#9bb0a8" : "#c6d0ce";
     g.push(`<rect data-kind="${xmlAttr(e.kind)}" x="${n(e.x * sx)}" y="${n(e.y * sy)}" width="${n(e.w * sx)}" height="${n(e.d * sy)}" fill="${fill}" stroke="${stroke}" stroke-width="0.6"/>`);
   }
   for (const it of items) {
