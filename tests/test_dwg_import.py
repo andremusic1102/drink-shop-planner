@@ -1,12 +1,10 @@
 """scripts/dwg_import.py 的純函式測試：不打網路。
 
 只測座標換算（rect）與兩個組裝函式（build_structure／build_items）——
-它們是 DWG 圖面單位 → 編輯器 1300×375 cm 的唯一轉換點，http()／main() 不碰。
+它們是 DWG 圖面單位 → 編輯器 1300×375 cm 的唯一轉換點；apply()／main() 用假 http 測順序與旗標，不打網路。
 """
 import os
 import sys
-
-import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 import dwg_import
@@ -37,21 +35,50 @@ def test_rect_stairs_hug_top_edge_and_fit_width():
 
 # ---- build_structure() ------------------------------------------------------
 
-def test_build_structure_counts_and_kinds():
-    els = dwg_import.build_structure()
-    assert len(els) == 20
-    assert {e["kind"] for e in els} == {"beam", "stairs", "bath", "entry"}
-    assert len({e["id"] for e in els}) == 20
-    assert sorted(e["floor"] for e in els if e["kind"] == "beam") == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
-    assert sorted(e["floor"] for e in els if e["kind"] == "stairs") == [1, 2, 3, 4]
+# 正式站 rev 15 的 1F 六個元件（實測）：keep-1f 要原樣保留
+EXISTING_1F = [
+    {"id": "entry-1", "kind": "entry", "floor": 1, "name": "玄關 175×100", "x": 1125, "y": 0, "w": 175, "d": 100},
+    {"id": "stairs-1", "kind": "stairs", "floor": 1, "name": "樓梯 267×100", "x": 858, "y": 0, "w": 267, "d": 100},
+    {"id": "bath-1", "kind": "bath", "floor": 1, "name": "廁所 140×269", "x": 137, "y": 106, "w": 140, "d": 269},
+    {"id": "beam-1", "kind": "beam", "floor": 1, "name": "梁1（近玄關）", "x": 1062, "y": 0, "w": 57, "d": 375},
+    {"id": "beam-2", "kind": "beam", "floor": 1, "name": "梁2（中段）", "x": 648, "y": 0, "w": 44, "d": 375},
+    {"id": "beam-3", "kind": "beam", "floor": 1, "name": "梁3（後段）", "x": 174, "y": 0, "w": 61, "d": 375},
+]
+
+
+def test_build_structure_keep_1f_preserves_existing_1f_elements():
+    els = dwg_import.build_structure(EXISTING_1F, keep_1f=True)
+    assert els[:6] == EXISTING_1F, "1F 六筆 id／座標原樣、順序在前"
+    upper = els[6:]
+    assert all(e["floor"] in (2, 3, 4) for e in upper), "接上去的只有 2–4F"
+    kinds = {k: sum(1 for e in upper if e["kind"] == k) for k in ("beam", "stairs", "bath", "partition", "entry")}
+    assert kinds == {"beam": 9, "stairs": 3, "bath": 2, "partition": 20, "entry": 0}
+    assert len({e["id"] for e in els}) == len(els) == 6 + 34, "無重複 id"
+    assert sorted(e["floor"] for e in upper if e["kind"] == "partition") == [2] * 6 + [3] * 7 + [4] * 7
+    # 可重跑：把結果再餵回去，不會重複加
+    assert dwg_import.build_structure(els, keep_1f=True) == els
+    # 現有的 2F 元件（父母加的）也保留
+    extra = {"id": "bath-2f-own", "kind": "bath", "floor": 2, "name": "自己加的", "x": 1, "y": 2, "w": 3, "d": 4}
+    els2 = dwg_import.build_structure(EXISTING_1F + [extra], keep_1f=True)
+    assert extra in els2 and len(els2) == 6 + 1 + 34
+
+
+def test_build_structure_replace_1f():
+    els = dwg_import.build_structure(EXISTING_1F, keep_1f=False)
+    assert len(els) == 1 + 4 * 4 + 3 + 20, "玄關 1＋每層 3 梁＋樓梯（16）＋廁所 3＋隔間牆 20"
+    assert {e["kind"] for e in els} == {"beam", "stairs", "bath", "entry", "partition"}
+    assert len({e["id"] for e in els}) == len(els)
+    beams1 = sorted(e["x"] for e in els if e["kind"] == "beam" and e["floor"] == 1)
+    assert beams1 == [195, 629, 1084], "1F 三根梁是 DWG 值，不是實測"
+    assert not any(e["id"] == "beam-1" for e in els), "現有的一律丟掉"
     assert sorted(e["floor"] for e in els if e["kind"] == "bath") == [1, 2, 3]
-    assert [e["floor"] for e in els if e["kind"] == "entry"] == [1]
 
 
 def test_build_structure_all_within_frame():
     frame = {"x": 0, "y": 0, "w": APP_W, "d": APP_D}
-    outside = [e["id"] for e in dwg_import.build_structure() if not _inside(e, frame)]
-    assert outside == []
+    for keep in (True, False):
+        outside = [e["id"] for e in dwg_import.build_structure(EXISTING_1F, keep_1f=keep) if not _inside(e, frame)]
+        assert outside == []
 
 
 # ---- build_items() ----------------------------------------------------------
@@ -70,7 +97,7 @@ def test_build_items_keeps_source_on_1f_and_adds_upper_floors():
 
 
 def test_build_items_bath_fixtures_inside_bath_element():
-    bath = {e["floor"]: e for e in dwg_import.build_structure() if e["kind"] == "bath"}
+    bath = {e["floor"]: e for e in dwg_import.build_structure(EXISTING_1F, keep_1f=True) if e["kind"] == "bath"}
     items = dwg_import.build_items([SOURCE_ITEM])
     fixtures = [i for i in items if i["n"] in ("浴缸", "馬桶", "洗手台")]
     assert [(i["floor"], i["n"]) for i in fixtures] == [
@@ -79,14 +106,16 @@ def test_build_items_bath_fixtures_inside_bath_element():
     assert bad == []
 
 
-def test_build_items_walls_and_doors_shape():
-    items = dwg_import.build_items([SOURCE_ITEM])
-    walls = [i for i in items if i.get("wall")]
+def test_build_items_has_no_walls():
+    # 牆已在結構：2–4F 的 DWG 隔間牆不進方案；來源方案裡的隔間牆設備也不複製
+    src_wall = {"id": 5, "n": "隔間牆", "c": "wall", "wall": True, "w": 200, "d": 10, "x": 80, "y": 80, "h": 0, "rot": 0}
+    items = dwg_import.build_items([SOURCE_ITEM, src_wall])
+    assert [i for i in items if i.get("wall")] == []
+    assert [i["id"] for i in items if (i.get("floor") or 1) == 1] == [SOURCE_ITEM["id"]], "來源只剩非牆的那件"
     doors = [i for i in items if i.get("door")]
-    assert len(walls) == 20
     assert len(doors) == 8
-    assert [i["c"] for i in walls] == ["wall"] * 20
     assert [i["w"] == i["d"] for i in doors] == [True] * 8
+    assert sum(1 for i in items if (i.get("floor") or 1) != 1) == 22 + 8, "2–4F 家具 22＋門 8"
 
 
 # ---- apply()：順序與半套用 ------------------------------------------------------
@@ -132,15 +161,24 @@ def test_apply_structure_409_reports_false_but_plan_already_created():
 # --apply 會整份換掉伺服器現有的 1F 結構（實測梁／廁所）。--keep-1f（plans/bath.md D1）
 # 做出來前，--apply 一定要明確帶 --replace-1f，而且要在打任何網路之前就擋下。
 
-def _no_network(*_args, **_kwargs):
-    raise AssertionError("不該打網路")
-
-
-def test_apply_requires_explicit_replace_1f(monkeypatch):
-    monkeypatch.setattr(dwg_import, "http", _no_network)
-    monkeypatch.setattr(sys, "argv", ["dwg_import.py", "--apply"])
-    with pytest.raises(SystemExit) as exc:
-        dwg_import.main()
-    assert exc.value.code == (
-        "--apply 會覆寫正式站現有的 1F 結構（實測梁／廁所），要覆寫請明確加 --replace-1f；"
-        "保留 1F 的 --keep-1f 見 plans/bath.md D1")
+def test_main_default_is_keep_1f(monkeypatch):
+    # 預設 --keep-1f：dry-run 印出的結構是「現有 1F 原樣＋2–4F」；--replace-1f 才是 DWG 四層
+    import contextlib
+    import io
+    import json as _json
+    def fake_http(method, path, body=None, base=""):
+        if path == "/api/structure": return (200, {"rev": 15, "elements": EXISTING_1F})
+        if path.startswith("/api/plans/"): return (200, {"id": "src", "name": "來源", "rev": 1, "plan": {"items": [SOURCE_ITEM]}})
+        raise AssertionError(path)
+    monkeypatch.setattr(dwg_import, "http", fake_http)
+    for argv, expect_first_beam in ((["dwg_import.py"], 1062), (["dwg_import.py", "--replace-1f"], None)):
+        monkeypatch.setattr(sys, "argv", argv)
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            dwg_import.main()
+        out = buf.getvalue()
+        payload = _json.loads(out[out.index("{"):])
+        els = payload["structure"]["elements"]
+        b1 = next((e for e in els if e["id"] == "beam-1"), None)
+        assert (b1["x"] if b1 else None) == expect_first_beam
+        assert payload["plan"]["items"] and not any(i.get("wall") for i in payload["plan"]["items"])

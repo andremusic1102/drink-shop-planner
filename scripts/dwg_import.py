@@ -13,11 +13,11 @@ x 從內框左緣起算（0–123，右緣是樓梯側），y 用 DXF 原值（�
 
 用法：
   python3 scripts/dwg_import.py                 # dry-run：印出要寫的結構與方案 JSON
-  python3 scripts/dwg_import.py --apply --replace-1f   # PUT /api/structure + POST /api/plans
-  python3 scripts/dwg_import.py --apply --replace-1f --base https://drinkshop-new.andremusic.dev
+  python3 scripts/dwg_import.py --apply           # 預設 --keep-1f：1F 保留伺服器現有（實測），只接上 2–4F
+  python3 scripts/dwg_import.py --apply --replace-1f   # 全部換成 DWG 的四層（含 1F）
+  python3 scripts/dwg_import.py --apply --base https://drinkshop-new.andremusic.dev
 
---apply 沒帶 --replace-1f 會直接退出：它會把伺服器現有的 1F 結構（實測梁／廁所）整份換掉。
-保留 1F 的 --keep-1f 還沒做，見 plans/bath.md D1。
+順序：先 POST 新方案（純新增），成功才 PUT 結構（baseRev 現值）。2–4F 的隔間牆進結構當 partition，不再進方案。
 """
 import argparse
 import json
@@ -106,9 +106,10 @@ def rect(x1, x2, y1, y2):
     }
 
 
-def build_structure():
-    els = [ENTRY]
-    for f in (1, 2, 3, 4):
+def dwg_elements(floors=(1, 2, 3, 4), with_walls=True):
+    """DWG 抄下來的結構元件（指定樓層）：梁 3 根、樓梯、廁所（1–3F）、隔間牆（2–4F，kind partition）。"""
+    els = []
+    for f in floors:
         for i, (y1, y2) in enumerate(BEAMS, 1):
             r = rect(0, X_RIGHT, y1, y2)
             els.append({"id": f"beam-{f}-{i}", "kind": "beam", "floor": f, "name": f"梁{i}", **r})
@@ -117,12 +118,37 @@ def build_structure():
         if f in BATH:
             r = rect(*BATH[f])
             els.append({"id": f"bath-{f}", "kind": "bath", "floor": f, "name": f"廁所 {r['w']}×{r['d']}", **r})
+        if with_walls:
+            for j, (x1, x2, y1, y2) in enumerate(WALLS.get(f, []), 1):
+                r = rect(x1, x2, y1, y2)
+                els.append({"id": f"partition-dwg-{f}-{j}", "kind": "partition", "floor": f, "name": "房間隔層", **r})
     return els
 
 
+def build_structure(existing=None, keep_1f=True):
+    """要 PUT 的完整結構。
+
+    keep_1f=True（預設）：伺服器現有的 1F 元件原樣保留（含 id、實測數字），現有的 2–4F 元件也保留；
+      只接上 DWG 的 2–4F 梁／樓梯／廁所／房間隔層（id 已存在的不重複加，腳本可重跑）。
+    keep_1f=False（--replace-1f）：全部換成 DWG 的四層（含 1F、玄關沿用），現有的一律丟掉。
+    """
+    existing = list(existing or [])
+    if not keep_1f:
+        return [ENTRY] + dwg_elements((1, 2, 3, 4), with_walls=True)
+    have = {e.get("id") for e in existing}
+    out = list(existing)
+    for e in dwg_elements((2, 3, 4), with_walls=True):
+        if e["id"] not in have:
+            out.append(e)
+    return out
+
+
 def build_items(source_items):
+    """新方案的設備：1F 複製來源方案（牆除外——牆已在結構），2–4F 家具＋門（牆不再進方案）。"""
     items = []
     for it in source_items:
+        if it.get("wall"):
+            continue
         it = dict(it)
         it.setdefault("floor", 1)
         items.append(it)
@@ -131,9 +157,6 @@ def build_items(source_items):
         for (n, c, x1, x2, y1, y2, h) in FURNITURE[f]:
             r = rect(x1, x2, y1, y2)
             items.append({"id": uid, "n": n, "c": c, "h": h, "rot": 0, "door": False, "floor": f, **r}); uid += 1
-        for (x1, x2, y1, y2) in WALLS[f]:
-            r = rect(x1, x2, y1, y2)
-            items.append({"id": uid, "n": "隔間牆", "c": "wall", "h": 0, "rot": 0, "wall": True, "floor": f, **r}); uid += 1
         for (x1, x2, y1, y2) in DOORS[f]:
             r = rect(x1, x2, y1, y2)
             s = max(r["w"], r["d"])
@@ -159,15 +182,14 @@ def http(method, path, body=None, base=BASE):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="真的寫到伺服器（預設只印）")
-    ap.add_argument("--replace-1f", action="store_true",
-                    help="覆寫伺服器現有的 1F 結構；未來 --keep-1f 做出來前 --apply 必須明確帶這個")
+    ap.add_argument("--keep-1f", dest="keep_1f", action="store_true", default=True,
+                    help="（預設）保留伺服器現有的 1F 結構（實測梁／廁所），只接上 2–4F")
+    ap.add_argument("--replace-1f", dest="keep_1f", action="store_false",
+                    help="全部換成 DWG 的四層結構（含 1F）；現有的一律丟掉")
     ap.add_argument("--base", default=BASE)
     ap.add_argument("--source", default=SOURCE_PLAN_ID, help="1F 設備要複製的方案 id")
     ap.add_argument("--name", default=NEW_PLAN_NAME)
     a = ap.parse_args()
-
-    if a.apply and not a.replace_1f:
-        sys.exit("--apply 會覆寫正式站現有的 1F 結構（實測梁／廁所），要覆寫請明確加 --replace-1f；保留 1F 的 --keep-1f 見 plans/bath.md D1")
 
     st, cur = http("GET", "/api/structure", base=a.base)
     if st != 200:
@@ -177,11 +199,11 @@ def main():
         sys.exit(f"GET /api/plans/{a.source} 回 {st}: {src}")
 
     src_items = (src.get("plan") or {}).get("items") or []
-    elements = build_structure()
+    elements = build_structure(cur.get("elements") or [], keep_1f=a.keep_1f)
     items = build_items(src_items)
     plan = {"items": items, "measures": []}
 
-    print(f"structure: 現在 rev {cur['rev']}、{len(cur['elements'])} 個元件 → 改成 {len(elements)} 個")
+    print(f"structure: 現在 rev {cur['rev']}、{len(cur['elements'])} 個元件 → 改成 {len(elements)} 個（{'保留 1F、只接 2–4F' if a.keep_1f else '全部換成 DWG'}）")
     print(f"plan: 從「{src['name']}」複製 {len(src_items)} 件 1F 設備，加 2–4F {len(items) - len(src_items)} 件 → 新方案「{a.name}」")
     if not a.apply:
         print(json.dumps({"structure": {"elements": elements}, "plan": plan}, ensure_ascii=False, indent=1))
