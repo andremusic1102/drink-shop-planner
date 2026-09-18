@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { cur, elementsOn, projection, draggableSet, FLOORS, isParked, PROJECTED_KINDS, cloneTo, moveTo, copyFloor, cloneMany, moveMany, COPYABLE_KINDS } from "../src/floors.js";
+import { cur, elementsOn, projection, draggableSet, FLOORS, isParked, PROJECTED_KINDS, cloneTo, moveTo, copyFloor, cloneMany, moveMany, COPYABLE_KINDS, onWalkway } from "../src/floors.js";
 
 const items = [
   { id: 1, n: "冰箱", c: "cold", x: 10, y: 10, w: 60, d: 60 },                 // floor 缺 → 1F
@@ -144,6 +144,7 @@ const HOUSE = [
   { id: "stairs-2", kind: "stairs", floor: 2, x: 650, y: 0, w: 442, d: 82 },
   { id: "bath-2", kind: "bath", floor: 2, name: "廁所", x: 338, y: 91, w: 130, d: 284 },
   { id: "partition-2", kind: "partition", floor: 2, x: 325, y: 89, w: 13, d: 286 },
+  { id: "walkway-2", kind: "walkway", floor: 2, name: "走道", x: 582, y: 0, w: 80, d: 82 },
   { id: "beam-4-1", kind: "beam", floor: 4, x: 195, y: 0, w: 42, d: 375 },
   { id: "stairs-4", kind: "stairs", floor: 4, x: 650, y: 0, w: 442, d: 82 },
   { id: "partition-4", kind: "partition", floor: 4, x: 114, y: 82, w: 13, d: 293 },
@@ -164,10 +165,11 @@ test("複製整層：目標層清空後只剩來源的設備與廁所隔層，�
   assert.deepEqual(on4.map((i) => [i.id, i.n, i.x, i.y]), [[100, "床", 32, 186], [101, "門", 234, 0]], "4F 原本的衣櫃／床頭櫃清掉、只剩 2F 複製來的（位置不變、新 id）");
   assert.equal(on4[1].door, true, "門的欄位照抄");
   const els4 = elementsOn(r.elements, 4);
-  assert.deepEqual(els4.map((e) => [e.id, e.kind]), [["beam-4-1", "beam"], ["stairs-4", "stairs"], ["bath-new1", "bath"], ["partition-new2", "partition"]], "4F 的梁樓梯留著、舊隔層清掉、來源的廁所與隔層複製過來");
+  assert.deepEqual(els4.map((e) => [e.id, e.kind]), [["beam-4-1", "beam"], ["stairs-4", "stairs"], ["bath-new1", "bath"], ["partition-new2", "partition"], ["walkway-new3", "walkway"]], "4F 的梁樓梯留著、舊隔層清掉、來源的廁所／隔層／走道複製過來");
   assert.deepEqual(els4.find((e) => e.kind === "bath").x, 338);
+  assert.deepEqual(els4.find((e) => e.kind === "walkway").x, 582, "走道位置不變");
   assert.ok(r.elements.some((e) => e.id === "entry-1"), "玄關不動");
-  assert.deepEqual(COPYABLE_KINDS, ["bath", "partition"]);
+  assert.deepEqual(COPYABLE_KINDS, ["bath", "partition", "walkway"]);
 });
 
 test("複製整層：來源層原樣不動、新 id 不重複", () => {
@@ -178,7 +180,20 @@ test("複製整層：來源層原樣不動、新 id 不重複", () => {
   assert.equal(new Set(r.items.map((i) => i.id)).size, r.items.length, "設備 id 不重複");
   assert.equal(new Set(r.elements.map((e) => e.id)).size, r.elements.length, "結構 id 不重複");
   assert.equal(FURN.length, 5, "不動原陣列");
-  assert.equal(HOUSE.length, 8);
+  assert.equal(HOUSE.length, 9);
+});
+
+test("onWalkway：設備壓到同層走道回那塊、貼齊不算、別層／門／隱藏／暫放不算", () => {
+  const wk = HOUSE.find((e) => e.id === "walkway-2");   // 2F x 582–662 × y 0–82
+  assert.equal(onWalkway({ id: 9, floor: 2, x: 600, y: 40, w: 50, d: 50 }, HOUSE), wk, "壓到");
+  assert.equal(onWalkway({ id: 9, floor: 2, x: 662, y: 0, w: 50, d: 50 }, HOUSE), null, "右邊剛好貼齊不算");
+  assert.equal(onWalkway({ id: 9, floor: 2, x: 600, y: 82, w: 50, d: 50 }, HOUSE), null, "下緣貼齊不算");
+  assert.equal(onWalkway({ id: 9, floor: 3, x: 600, y: 40, w: 50, d: 50 }, HOUSE), null, "別層不算");
+  assert.equal(onWalkway({ id: 9, floor: 2, door: true, x: 600, y: 40, w: 50, d: 50 }, HOUSE), null, "門不算");
+  assert.equal(onWalkway({ id: 9, floor: 2, hidden: true, x: 600, y: 40, w: 50, d: 50 }, HOUSE), null, "隱藏不算");
+  assert.equal(onWalkway({ id: 9, floor: 2, x: -100, y: -100, w: 50, d: 50 }, HOUSE), null, "暫放不算");
+  assert.equal(onWalkway({ id: 9, floor: 2, x: 600, y: 40, w: 50, d: 50 }, [{ ...wk, kind: "bath" }]), null, "同位置但不是走道不算");
+  assert.equal(onWalkway(null, HOUSE), null);
 });
 
 test("複製整層：from 等於 to 不動", () => {
