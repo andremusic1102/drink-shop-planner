@@ -34,6 +34,12 @@ seal 指出 `isParked` 該定義在 `floors.js`（原本在 rules.js、floors.js
 再 deploy 一次：Version ID `2bec65bb-ddda-4c55-9a56-7acd37888f63`；`curl https://drinkshop-new.andremusic.dev/floors.js`
 含 `export function isParked`。判準與行為沒變（56/56 測試同一組）。
 
+## 第三次 deploy（seal 第二輪的 D2 發現）
+
+面板 `pointerdown` 改成 capture 階段一律先切到該面板樓層（`ca4a795`）。Version ID
+`023203ba-9491-4e7b-9d96-b49e349af80d`；`curl https://drinkshop-new.andremusic.dev/` 含新的 capture handler。
+本機 smoke：在 2F 面板拖床後目前樓層＝2F、tab 亮 2F、console 0 錯誤；資料層沒動。
+
 ## 沒驗的
 
 - 手機（<720px）初始單層：只在桌機 viewport（1400×900）跑過；邏輯是 `window.innerWidth>=720`。

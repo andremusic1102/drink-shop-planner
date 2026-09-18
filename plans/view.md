@@ -61,7 +61,7 @@ contract_commit: "655965fa51e56bec219aadd9c3571fe11de970f2"
   `buildSVG()` 依目前 `view` 畫：直向時每層一個 `<g data-floor="n">`，四層並排一張；比例尺與標題照舊。
   Completion criterion: `grep -c 'data-floor=' app.html` ≥ 1（在 buildSVG 內）；`cd worker && node --test tests/build.test.js` 全綠。
 
-- [ ] D4: 上線＋readback（**D5、D6 做完才跑，一次 deploy**）
+- [ ] D4: 上線＋readback（**D5、D6 做完才跑第一次 deploy**；之後 seal 發現的修正可再 deploy，每次都在 readback 記一段：HEAD、Version ID、驗了什麼）
   `cd worker && npm run deploy`，deploy 前本機 miniflare 開舊方案確認：四層並排時 1F 設備位置跟橫向單層一致（同一件設備的 x/y 存檔前後不變）、切回橫向單層跟今天長得一樣。deploy 後在 `drinkshop-new.andremusic.dev` 開一份舊方案、四層並排拖 2F 一件家具、存、重載、確認 1F 沒動。
   Completion criterion: `docs/d7-readback.md` 記錄 deploy 前後 `curl -s https://drinkshop-new.andremusic.dev/api/plans/<id>` 中同一件 1F 設備的 `x,y` 相同、`git rev-parse HEAD`。
 
