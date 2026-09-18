@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { cur, elementsOn, projection, draggableSet, FLOORS, isParked, PROJECTED_KINDS, cloneTo, moveTo } from "../src/floors.js";
+import { cur, elementsOn, projection, draggableSet, FLOORS, isParked, PROJECTED_KINDS, cloneTo, moveTo, copyFloor, cloneMany, moveMany, COPYABLE_KINDS } from "../src/floors.js";
 
 const items = [
   { id: 1, n: "冰箱", c: "cold", x: 10, y: 10, w: 60, d: 60 },                 // floor 缺 → 1F
@@ -135,4 +135,71 @@ test("搬層：只改 floor、id 不變", () => {
   assert.deepEqual(moveTo(bath, 4), { ...bath, floor: 4 });
   assert.equal(bath.floor, 2, "原物件不動");
   assert.deepEqual(moveTo({ id: 7, x: 1, y: 2, w: 3, d: 4 }, "3"), { id: 7, x: 1, y: 2, w: 3, d: 4, floor: 3 }, "字串樓層也吃");
+});
+
+// ---- 複製整層／多選 ----------------------------------------------------------
+const HOUSE = [
+  { id: "entry-1", kind: "entry", floor: 1, x: 1125, y: 0, w: 175, d: 100 },
+  { id: "beam-2-1", kind: "beam", floor: 2, x: 195, y: 0, w: 42, d: 375 },
+  { id: "stairs-2", kind: "stairs", floor: 2, x: 650, y: 0, w: 442, d: 82 },
+  { id: "bath-2", kind: "bath", floor: 2, name: "廁所", x: 338, y: 91, w: 130, d: 284 },
+  { id: "partition-2", kind: "partition", floor: 2, x: 325, y: 89, w: 13, d: 286 },
+  { id: "beam-4-1", kind: "beam", floor: 4, x: 195, y: 0, w: 42, d: 375 },
+  { id: "stairs-4", kind: "stairs", floor: 4, x: 650, y: 0, w: 442, d: 82 },
+  { id: "partition-4", kind: "partition", floor: 4, x: 114, y: 82, w: 13, d: 293 },
+];
+const FURN = [
+  { id: 1, n: "冰箱", c: "cold", x: 878, y: 108, w: 75, d: 78 },                 // 1F
+  { id: 2, n: "床", c: "shelf", floor: 2, x: 32, y: 186, w: 162, d: 189 },
+  { id: 3, n: "門", c: "seal", floor: 2, door: true, x: 234, y: 0, w: 101, d: 101, rot: 0, flip: false },
+  { id: 4, n: "衣櫃", c: "shelf", floor: 4, x: 127, y: 238, w: 49, d: 137 },
+  { id: 5, n: "床頭櫃", c: "shelf", floor: 4, x: 250, y: 92, w: 98, d: 46 },
+];
+const idGen = (start) => { let n = start; return () => n++; };
+const elGen = () => { let n = 0; return (kind) => kind + "-new" + (++n); };
+
+test("複製整層：目標層清空後只剩來源的設備與廁所隔層，梁樓梯玄關不動", () => {
+  const r = copyFloor(FURN, HOUSE, 2, 4, idGen(100), elGen());
+  const on4 = cur(r.items, 4);
+  assert.deepEqual(on4.map((i) => [i.id, i.n, i.x, i.y]), [[100, "床", 32, 186], [101, "門", 234, 0]], "4F 原本的衣櫃／床頭櫃清掉、只剩 2F 複製來的（位置不變、新 id）");
+  assert.equal(on4[1].door, true, "門的欄位照抄");
+  const els4 = elementsOn(r.elements, 4);
+  assert.deepEqual(els4.map((e) => [e.id, e.kind]), [["beam-4-1", "beam"], ["stairs-4", "stairs"], ["bath-new1", "bath"], ["partition-new2", "partition"]], "4F 的梁樓梯留著、舊隔層清掉、來源的廁所與隔層複製過來");
+  assert.deepEqual(els4.find((e) => e.kind === "bath").x, 338);
+  assert.ok(r.elements.some((e) => e.id === "entry-1"), "玄關不動");
+  assert.deepEqual(COPYABLE_KINDS, ["bath", "partition"]);
+});
+
+test("複製整層：來源層原樣不動、新 id 不重複", () => {
+  const r = copyFloor(FURN, HOUSE, 2, 4, idGen(100), elGen());
+  assert.deepEqual(cur(r.items, 2), cur(FURN, 2), "2F 設備原樣");
+  assert.deepEqual(elementsOn(r.elements, 2), elementsOn(HOUSE, 2), "2F 結構原樣");
+  assert.deepEqual(cur(r.items, 1), cur(FURN, 1), "別層不動");
+  assert.equal(new Set(r.items.map((i) => i.id)).size, r.items.length, "設備 id 不重複");
+  assert.equal(new Set(r.elements.map((e) => e.id)).size, r.elements.length, "結構 id 不重複");
+  assert.equal(FURN.length, 5, "不動原陣列");
+  assert.equal(HOUSE.length, 8);
+});
+
+test("複製整層：from 等於 to 不動", () => {
+  assert.deepEqual(copyFloor(FURN, HOUSE, 2, 2, idGen(100), elGen()), { items: FURN, elements: HOUSE });
+  assert.deepEqual(copyFloor(FURN, HOUSE, 2, 7, idGen(100), elGen()), { items: FURN, elements: HOUSE }, "樓層不合法也不動");
+  assert.deepEqual(copyFloor(null, null, 1, 2, idGen(1), elGen()), { items: [], elements: [] });
+});
+
+test("多選複製：同層各偏移 30、跨層同位置", () => {
+  const same = cloneMany(FURN, [5, 4], 4, idGen(200));
+  assert.deepEqual(same.map((i) => [i.id, i.n, i.x, i.y]), [[200, "衣櫃", 157, 238], [201, "床頭櫃", 280, 122]], "順序照 items 原本、各偏移 30（衣櫃 y 貼對面牆，夾回 238）");
+  const cross = cloneMany(FURN, [4, 5], 3, idGen(300));
+  assert.deepEqual(cross.map((i) => [i.id, i.floor, i.x, i.y]), [[300, 3, 127, 238], [301, 3, 250, 92]]);
+  assert.deepEqual(cloneMany(FURN, [], 3, idGen(1)), []);
+  assert.deepEqual(cloneMany(FURN, [999], 3, idGen(1)), [], "不存在的 id 略過");
+});
+
+test("多選搬層：只改 floor", () => {
+  const r = moveMany(FURN, [4, 5], 2);
+  assert.deepEqual(r.map((i) => [i.id, i.floor || 1]), [[1, 1], [2, 2], [3, 2], [4, 2], [5, 2]]);
+  assert.deepEqual(r.find((i) => i.id === 4), { ...FURN[3], floor: 2 }, "座標與其他欄位不變");
+  assert.equal(r[0], FURN[0], "沒被選的是同一個物件");
+  assert.equal(FURN[3].floor, 4, "不動原物件");
 });
