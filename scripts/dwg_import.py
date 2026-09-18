@@ -179,14 +179,29 @@ def main():
         print(json.dumps({"structure": {"elements": elements}, "plan": plan}, ensure_ascii=False, indent=1))
         return
 
-    st, res = http("PUT", "/api/structure", {"structure": {"elements": elements}, "baseRev": cur["rev"]}, base=a.base)
+    ok = apply(a.base, a.name, plan, elements, cur["rev"])
+    if not ok:
+        sys.exit(1)
+
+
+def apply(base, name, plan, elements, base_rev, http_fn=http):
+    """先建新方案（純新增，失敗不影響任何人），成功了才覆寫共用結構。
+
+    順序反過來會有半套用：結構已換成 DWG、方案卻沒建成，所有既有方案都跟著吃到新結構。
+    回傳 True 表示兩步都成功；任一步失敗印出狀態並回 False（結構失敗時新方案留著，
+    要嘛重跑 --apply 前先刪掉它，要嘛只重跑 PUT）。
+    """
+    st, created = http_fn("POST", "/api/plans", {"name": name, "plan": plan}, base=base)
+    print("POST /api/plans →", st, created)
+    if st != 200:
+        return False
+    st, res = http_fn("PUT", "/api/structure", {"structure": {"elements": elements}, "baseRev": base_rev}, base=base)
     print("PUT /api/structure →", st, res if st != 200 else f"rev {res['rev']}")
     if st != 200:
-        sys.exit(1)
-    st, res = http("POST", "/api/plans", {"name": a.name, "plan": plan}, base=a.base)
-    print("POST /api/plans →", st, res)
-    if st != 200:
-        sys.exit(1)
+        plan_id = created.get("id") if isinstance(created, dict) else ""
+        print(f"結構沒寫成（新方案 {plan_id} 已建）；409 表示有人剛存過結構，重新 GET 拿最新 rev 再 PUT 一次即可")
+        return False
+    return True
 
 
 if __name__ == "__main__":
