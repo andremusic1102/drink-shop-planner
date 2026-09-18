@@ -18,8 +18,9 @@ export const PLAN_H = 375;
 // 預設的建築結構：1F 是 CAD 實測；2–4F 目前沒有圖，等實測後在 UI 的結構模式輸入。
 // GET /api/structure 讀不到那一列時就回這份。
 export const DEFAULT_STRUCTURE = [
-  { id: "entry-1", kind: "entry", floor: 1, name: "玄關 175×100", x: 1125, y: 0, w: 175, d: 100 },
-  { id: "stairs-1", kind: "stairs", floor: 1, name: "樓梯 267×100", x: 858, y: 0, w: 267, d: 100 },
+  // 2026-09-18 定案：樓梯 318×100 四層同位置 662–980；玄關線 1184（1F 玄關到第一階 204）
+  { id: "entry-1", kind: "entry", floor: 1, name: "玄關 116×100", x: 1184, y: 0, w: 116, d: 100 },
+  { id: "stairs-1", kind: "stairs", floor: 1, name: "樓梯 318×100", x: 662, y: 0, w: 318, d: 100 },
   { id: "bath-1", kind: "bath", floor: 1, name: "廁所 140×269", x: 137, y: 106, w: 140, d: 269 },
 ];
 
