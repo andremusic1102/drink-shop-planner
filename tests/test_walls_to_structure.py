@@ -41,6 +41,9 @@ def test_collect_keeps_walls_that_differ_by_a_few_cm():
     parts = w2s.collect_partitions([a, b])
     assert [p["x"] for p in parts] == [275.6, 276, 278.04, 284]
     assert next(p for p in parts if p["x"] == 276)["_from"] == ["A", "B"], "完全相同的才合"
+    # 小數第三位不同也是兩道（不做任何四捨五入）
+    assert w2s.partition_id(1, 1.001, 100, 10, 275) != w2s.partition_id(1, 1.004, 100, 10, 275)
+    assert w2s.partition_id(1, 276, 100, 10, 275) == w2s.partition_id(1, 276.0, 100.0, 10, 275), "276 與 276.0 是同一個值"
 
 
 def test_strip_walls_keeps_everything_else():

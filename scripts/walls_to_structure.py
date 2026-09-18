@@ -28,15 +28,16 @@ BASE = "https://drinkshop.andremusic.dev"
 
 
 def _num(v):
+    """原值（float），不四捨五入：去重只認完全相同的座標與尺寸。整數值仍以 int 存（276 而不是 276.0）。"""
     v = float(v or 0)
-    return int(v) if v == int(v) else round(v, 2)
+    return int(v) if v == int(v) else v
 
 
 def partition_id(floor, x, y, w, d):
     """穩定的 id：同一組 (floor, x, y, w, d)（cm，取到 0.01）跑兩次得到同一個 id（重跑不會重複加）。
     不做容差合併：位置差幾 cm 的兩道牆是兩道（正式站 275.6 vs 278.04 那對會並存，人自己刪一道）——
     容差會把真的不同的牆（276 vs 284）合掉，那道牆就消失了。"""
-    key = f"{floor}:{_num(x)}:{_num(y)}:{_num(w)}:{_num(d)}"
+    key = f"{floor}:{_num(x)!r}:{_num(y)!r}:{_num(w)!r}:{_num(d)!r}"   # repr：1.001 與 1.004 是不同的 key
     return "partition-" + hashlib.sha1(key.encode()).hexdigest()[:8]
 
 
