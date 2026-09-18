@@ -6,6 +6,8 @@
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 import dwg_import
 
@@ -124,3 +126,21 @@ def test_apply_structure_409_reports_false_but_plan_already_created():
     ok = dwg_import.apply("http://x", "新方案", {"items": []}, [dwg_import.ENTRY], 15, http_fn=http_fn)
     assert ok is False
     assert [m for m, _, _ in calls] == ["POST", "PUT"]
+
+
+# ---- main()：--apply 的安全閥 ------------------------------------------------------
+# --apply 會整份換掉伺服器現有的 1F 結構（實測梁／廁所）。--keep-1f（plans/bath.md D1）
+# 做出來前，--apply 一定要明確帶 --replace-1f，而且要在打任何網路之前就擋下。
+
+def _no_network(*_args, **_kwargs):
+    raise AssertionError("不該打網路")
+
+
+def test_apply_requires_explicit_replace_1f(monkeypatch):
+    monkeypatch.setattr(dwg_import, "http", _no_network)
+    monkeypatch.setattr(sys, "argv", ["dwg_import.py", "--apply"])
+    with pytest.raises(SystemExit) as exc:
+        dwg_import.main()
+    assert exc.value.code == (
+        "--apply 會覆寫正式站現有的 1F 結構（實測梁／廁所），要覆寫請明確加 --replace-1f；"
+        "保留 1F 的 --keep-1f 見 plans/bath.md D1")
