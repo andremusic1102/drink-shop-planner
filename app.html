@@ -167,6 +167,7 @@
       <button id="backList">☰ 方案列表</button>
       <span class="syncpill off" id="syncPill">● 離線</span>
       <span class="ftabs" id="floorTabs"><button data-floor="1" class="on">1F</button><button data-floor="2">2F</button><button data-floor="3">3F</button><button data-floor="4">4F</button></span>
+      <select id="copyFloor" class="itembtn" title="把目前樓層的設備＋廁所／房間隔層複製到另一層（會先清掉那層的）"><option value="">複製整層到…</option><option value="1">1F</option><option value="2">2F</option><option value="3">3F</option><option value="4">4F</option></select>
       <label class="tgl" title="直向：門口在下、樓梯在右，跟原始 CAD 同向"><input type="checkbox" id="orientToggle" checked> 直向</label>
       <label class="tgl" title="四層左到右並排；手機上小，關掉只看目前樓層"><input type="checkbox" id="allFloors"> 四層並排</label>
       <label class="tgl"><input type="checkbox" id="projToggle" checked> 投影別層</label>
@@ -243,7 +244,7 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany } from './floors.js';
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany, copyFloor, COPYABLE_KINDS } from './floors.js';
 import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot } from './view.js';
 // MARGIN：畫布四周的空白；門口側（+x 之外）留 ENTRY_MARGIN，暫放時放得下最長的家具（DWG 那批 274）
 const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, ENTRY_MARGIN=300, PANEL_GAP=120;
@@ -572,7 +573,11 @@ function rotate(){ if(structMode||sel==null)return; const it=items.find(i=>i.id=
   const cx=it.x+it.w/2,cy=it.y+it.d/2; if(!it.door&&!it.win)[it.w,it.d]=[it.d,it.w]; it.rot=((it.rot||0)+90)%360;
   [it.x,it.y]=clampPos(it,cx-it.w/2,cy-it.d/2); save(); render(); }
 function dup(){ if(structMode||sel==null)return;
-  if(selSet.size>1){ const made=cloneMany(items,[...selSet],curFloor,()=>uid++); items=items.concat(made); selSet=new Set(made.map(i=>i.id)); sel=made[made.length-1].id; save(); render(); return; }
+  if(selSet.size>1){   // 多選可跨面板累積：按各件自己的樓層分組複製，不是全丟到 curFloor（D3）
+    const byFloor=new Map(); [...selSet].forEach(id=>{ const o=items.find(i=>i.id===id); if(!o)return; const f=floorOf(o); if(!byFloor.has(f))byFloor.set(f,[]); byFloor.get(f).push(id); });
+    let made=[]; byFloor.forEach((ids,f)=>{ made=made.concat(cloneMany(items,ids,f,()=>uid++)); });
+    if(!made.length)return;
+    items=items.concat(made); selSet=new Set(made.map(i=>i.id)); sel=made[made.length-1].id; save(); render(); return; }
   const it=items.find(i=>i.id===sel); if(!it)return;
   const c=JSON.parse(JSON.stringify(it)); c.id=uid++; [c.x,c.y]=clampPos(c,it.x+30,it.y+30); items.push(c); sel=c.id; save(); render(); }
 function del(){ if(structMode){ delElement(); return; } if(sel==null)return; const gone=selSet.size>1?selSet:new Set([sel]); items=items.filter(i=>!gone.has(i.id)); sel=null; save(); render(); }
@@ -795,6 +800,14 @@ $('#orientToggle').checked=isV(); $('#allFloors').checked=view.all; $('#projTogg
 $('#orientToggle').onchange=e=>setView({orient:e.target.checked?'v':'h'});
 $('#allFloors').onchange=e=>{ $('#projToggle').checked=!e.target.checked; setView({all:e.target.checked}); };
 $('#multiToggle').onchange=()=>{ updateSel(); };
+// 複製整層（2026-09-18）：目前樓層 → 目標層。先清掉目標層的設備＋廁所／房間隔層（梁樓梯玄關留著），再複製。confirm 帶件數。
+$('#copyFloor').onchange=e=>{ const to=+e.target.value; e.target.value=''; if(!FLOORS.includes(to)||to===curFloor)return;
+  if(!structLoaded){ toast('建築結構還在載入（或離線），先不能複製整層'); return; }
+  const from=curFloor, nItems=onFloor(items,to).length, nEls=elementsOn(elements,to).filter(x=>COPYABLE_KINDS.includes(x.kind)).length;
+  const sItems=onFloor(items,from).length, sEls=elementsOn(elements,from).filter(x=>COPYABLE_KINDS.includes(x.kind)).length;
+  if(!confirm('會先清掉 '+to+'F 的 '+nItems+' 件設備、'+nEls+' 個廁所／房間隔層，再把 '+from+'F 的 '+sItems+' 件設備、'+sEls+' 個廁所／房間隔層複製過去。\n（梁、樓梯、玄關不動；方案與結構都有版本紀錄可回復）\n\n確定？'))return;
+  const r=copyFloor(items,elements,from,to,()=>uid++,k=>elId(k)); items=r.items; elements=r.elements; sel=null; selEl=null;
+  save(); saveStructure(); setFloor(to); toast(from+'F 已複製到 '+to+'F'); };
 buildPanels();
 setFloor(curFloor);   // 同步 tab 樣式（上次看的樓層記在這台瀏覽器）
 
