@@ -640,32 +640,44 @@ $('#share').onclick=()=>{ const u=location.origin+location.pathname; if(navigato
 
 // 進 innerHTML／屬性值前一律過這裡：名稱是任意字串、而且方案與結構都是大家共用的
 function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function buildSVG(){ const s=1.7, M=120;
-  const px=v=>((v+M)*s).toFixed(1), ln=v=>(v*s).toFixed(1);
-  const W=Math.round((PLAN_W+2*M)*s), H=Math.round((PLAN_H+2*M)*s);
+// 匯出跟著檢視：看到什麼匯什麼。面板排法同 layoutCm()，每層一個 <g data-floor>，座標全走 toScreen／toScreenPoint。
+function buildSVG(){ const s=1.7, L=layoutCm(), floors=viewFloors();
+  const ln=v=>(v*s).toFixed(1);
+  const W=Math.round(L.W*s), H=Math.round(L.H*s);
   const ink=cssv('--wall'),sub=cssv('--sub'),line=cssv('--line'),acc=cssv('--accent'),shc=cssv('--shell'),sealB=cssv('--sealB'),coldB=cssv('--coldB');
   const P={counter:[cssv('--counter'),cssv('--counterB')],cold:[cssv('--cold'),cssv('--coldB')],water:[cssv('--water'),cssv('--waterB')],heat:[cssv('--heat'),cssv('--heatB')],seal:[cssv('--seal'),cssv('--sealB')],shrine:[cssv('--shrine'),cssv('--shrineB')],shelf:[cssv('--shelf'),cssv('--shelfB')]};
   let g='<svg xmlns="http://www.w3.org/2000/svg" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'"><rect width="'+W+'" height="'+H+'" fill="#ffffff"/>';
-  g+='<text x="'+(W/2)+'" y="'+Math.round(22*s)+'" font-family="sans-serif" font-size="'+Math.round(11*s)+'" text-anchor="middle" fill="#111">飲料店 '+curFloor+'F 平面配置 · 1300×375cm</text>';
-  g+='<rect x="'+px(0)+'" y="'+px(0)+'" width="'+ln(PLAN_W)+'" height="'+ln(PLAN_H)+'" fill="none" stroke="'+ink+'" stroke-width="3"/>';
-  curEls().forEach(o=>{ g+='<rect x="'+px(o.x)+'" y="'+px(o.y)+'" width="'+ln(o.w)+'" height="'+ln(o.d)+'" fill="'+shc+'" stroke="'+line+'"/>'+
-    '<text x="'+px(o.x+o.w/2)+'" y="'+px(o.y+o.d/2)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" dominant-baseline="middle" fill="'+sub+'">'+esc(elLabel(o))+'</text>'; });
-  cur().forEach(it=>{ if(it.hidden)return; const cxp=px(it.x+it.w/2), cyp=px(it.y+it.d/2), pw=it.w*s, pd=it.d*s;
-    if(it.door){ g+='<g transform="rotate('+(it.rot||0)+' '+cxp+' '+cyp+')">'+
-        '<path d="M'+px(it.x)+' '+px(it.y+it.d)+' A'+ln(it.w)+' '+ln(it.d)+' 0 0 1 '+px(it.x+it.w)+' '+px(it.y)+'" fill="none" stroke="'+sealB+'" stroke-width="1.6"/>'+
-        '<rect x="'+px(it.x+it.w-6)+'" y="'+px(it.y)+'" width="'+ln(6)+'" height="'+ln(it.d)+'" fill="#fff" stroke="'+sealB+'" stroke-width="1.6"/></g>';
-    } else if(it.win){ g+='<g transform="rotate('+(it.rot||0)+' '+cxp+' '+cyp+')"><rect x="'+px(it.x)+'" y="'+px(it.y)+'" width="'+ln(it.w)+'" height="'+ln(it.d)+'" fill="#fff" stroke="'+coldB+'" stroke-width="1.6"/>'+
-        '<line x1="'+px(it.x)+'" y1="'+cyp+'" x2="'+px(it.x+it.w)+'" y2="'+cyp+'" stroke="'+coldB+'" stroke-width="1.6"/></g>';
-    } else { const cc=it.wall?[cssv('--wall'),cssv('--wall')]:(P[it.c]||P.shelf), tc=it.wall?'#ffffff':'#1a1f22';
-      g+='<rect x="'+px(it.x)+'" y="'+px(it.y)+'" width="'+ln(it.w)+'" height="'+ln(it.d)+'" fill="'+cc[0]+'" stroke="'+cc[1]+'" stroke-width="1.4"/>';
-      const fs=Math.max(8,Math.min(pw*0.9/Math.max(2,[...it.n].length), pd*0.5, 22));
-      g+='<text x="'+cxp+'" y="'+(parseFloat(cyp)-3).toFixed(1)+'" font-family="sans-serif" font-size="'+fs.toFixed(1)+'" font-weight="700" text-anchor="middle" fill="'+tc+'">'+esc(it.n)+'</text>'+
-        '<text x="'+cxp+'" y="'+(parseFloat(cyp)+fs*0.95).toFixed(1)+'" font-family="monospace" font-size="'+(fs*0.68).toFixed(1)+'" text-anchor="middle" fill="'+tc+'">'+it.w+'×'+it.d+'</text>';
-    } });
-  curM().forEach(m=>{ const A=m.a?ptPos(m.a):[m.x1,m.y1], B=m.b?ptPos(m.b):[m.x2,m.y2];
-    g+='<line x1="'+px(A[0])+'" y1="'+px(A[1])+'" x2="'+px(B[0])+'" y2="'+px(B[1])+'" stroke="'+acc+'" stroke-width="1.5" stroke-dasharray="6 4"/>'+
-      '<text x="'+px((A[0]+B[0])/2)+'" y="'+px((A[1]+B[1])/2)+'" font-family="monospace" font-size="'+Math.round(10*s)+'" font-weight="700" text-anchor="middle" fill="'+acc+'">'+Math.round(Math.hypot(B[0]-A[0],B[1]-A[1]))+'</text>'; });
-  g+='<rect x="'+px(0)+'" y="'+px(PLAN_H+40)+'" width="'+ln(100)+'" height="5" fill="#111"/><text x="'+px(50)+'" y="'+px(PLAN_H+34)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" fill="#555">1m(比例尺)</text>';
+  const ttl=floors.length>1?floors[0]+'F–'+floors[floors.length-1]+'F':curFloor+'F';
+  g+='<text x="'+(W/2)+'" y="'+Math.round(22*s)+'" font-family="sans-serif" font-size="'+Math.round(11*s)+'" text-anchor="middle" fill="#111">飲料店 '+ttl+' 平面配置 · 1300×375cm</text>';
+  floors.forEach((f,i)=>{
+    const ox=MARGIN+(L.across?i*(L.ps.w+L.gap):0), oy=MARGIN+(L.across?0:i*(L.ps.h+L.gap));   // 面板左上（cm）
+    const px=v=>(v*s).toFixed(1), R=r=>toScreen(V(),r), Pt=(x,y)=>toScreenPoint(V(),x,y);
+    g+='<g data-floor="'+f+'" transform="translate('+ln(ox)+' '+ln(oy)+')">';
+    g+='<text x="0" y="'+(-6*s).toFixed(1)+'" font-family="monospace" font-size="'+Math.round(10*s)+'" font-weight="700" fill="#111">'+f+'F</text>';
+    g+='<rect x="0" y="0" width="'+ln(L.ps.w)+'" height="'+ln(L.ps.h)+'" fill="none" stroke="'+ink+'" stroke-width="3"/>';
+    elementsOn(elements,f).forEach(o=>{ const r=R(o); g+='<rect x="'+px(r.sx)+'" y="'+px(r.sy)+'" width="'+ln(r.sw)+'" height="'+ln(r.sh)+'" fill="'+shc+'" stroke="'+line+'"/>'+
+      '<text x="'+px(r.sx+r.sw/2)+'" y="'+px(r.sy+r.sh/2)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" dominant-baseline="middle" fill="'+sub+'">'+esc(elLabel(o))+'</text>'; });
+    onFloor(items,f).forEach(it=>{ if(it.hidden)return; const r=R(it), cx=r.sx+r.sw/2, cy=r.sy+r.sh/2, cxp=px(cx), cyp=px(cy);
+      if(it.door||it.win){ // 門窗：模型尺寸的框放在畫面框中心，繞中心轉 visualRot（跟畫面上的 placeRot 同一招）
+        const bx=cx-it.w/2, by=cy-it.d/2; g+='<g transform="rotate('+visualRot(V(),it.rot)+' '+cxp+' '+cyp+')'+(it.door&&it.flip?' translate('+px(2*cx)+' 0) scale(-1 1)':'')+'">';
+        if(it.door){ g+='<path d="M'+px(bx)+' '+px(by+it.d)+' A'+ln(it.w)+' '+ln(it.d)+' 0 0 1 '+px(bx+it.w)+' '+px(by)+'" fill="none" stroke="'+sealB+'" stroke-width="1.6"/>'+
+            '<rect x="'+px(bx+it.w-6)+'" y="'+px(by)+'" width="'+ln(6)+'" height="'+ln(it.d)+'" fill="#fff" stroke="'+sealB+'" stroke-width="1.6"/>'; }
+        else { g+='<rect x="'+px(bx)+'" y="'+px(by)+'" width="'+ln(it.w)+'" height="'+ln(it.d)+'" fill="#fff" stroke="'+coldB+'" stroke-width="1.6"/>'+
+            '<line x1="'+px(bx)+'" y1="'+cyp+'" x2="'+px(bx+it.w)+'" y2="'+cyp+'" stroke="'+coldB+'" stroke-width="1.6"/>'; }
+        g+='</g>';
+      } else { const cc=it.wall?[cssv('--wall'),cssv('--wall')]:(P[it.c]||P.shelf), tc=it.wall?'#ffffff':'#1a1f22', pw=r.sw*s, pd=r.sh*s;
+        g+='<rect x="'+px(r.sx)+'" y="'+px(r.sy)+'" width="'+ln(r.sw)+'" height="'+ln(r.sh)+'" fill="'+cc[0]+'" stroke="'+cc[1]+'" stroke-width="1.4"/>';
+        const fs=Math.max(8,Math.min(pw*0.9/Math.max(2,[...it.n].length), pd*0.5, 22));
+        g+='<text x="'+cxp+'" y="'+(parseFloat(cyp)-3).toFixed(1)+'" font-family="sans-serif" font-size="'+fs.toFixed(1)+'" font-weight="700" text-anchor="middle" fill="'+tc+'">'+esc(it.n)+'</text>'+
+          '<text x="'+cxp+'" y="'+(parseFloat(cyp)+fs*0.95).toFixed(1)+'" font-family="monospace" font-size="'+(fs*0.68).toFixed(1)+'" text-anchor="middle" fill="'+tc+'">'+it.w+'×'+it.d+'</text>';
+      } });
+    onFloor(measures,f).forEach(m=>{ const A=m.a?ptPos(m.a):[m.x1,m.y1], B=m.b?ptPos(m.b):[m.x2,m.y2], a=Pt(A[0],A[1]), b=Pt(B[0],B[1]);
+      g+='<line x1="'+px(a.sx)+'" y1="'+px(a.sy)+'" x2="'+px(b.sx)+'" y2="'+px(b.sy)+'" stroke="'+acc+'" stroke-width="1.5" stroke-dasharray="6 4"/>'+
+        '<text x="'+px((a.sx+b.sx)/2)+'" y="'+px((a.sy+b.sy)/2)+'" font-family="monospace" font-size="'+Math.round(10*s)+'" font-weight="700" text-anchor="middle" fill="'+acc+'">'+Math.round(Math.hypot(B[0]-A[0],B[1]-A[1]))+'</text>'; });
+    g+='</g>';
+  });
+  // 比例尺：整張圖的左下角
+  g+='<rect x="'+ln(MARGIN)+'" y="'+ln(L.H-MARGIN+40)+'" width="'+ln(100)+'" height="5" fill="#111"/><text x="'+ln(MARGIN+50)+'" y="'+ln(L.H-MARGIN+34)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" fill="#555">1m(比例尺)</text>';
   g+='</svg>'; return g; }
 function exportPNG(){ const svg=buildSVG(); const blob=new Blob([svg],{type:'image/svg+xml;charset=utf-8'}); const url=URL.createObjectURL(blob);
   const img=new Image(); img.onload=()=>{ const c=document.createElement('canvas'); c.width=img.naturalWidth||img.width; c.height=img.naturalHeight||img.height;
@@ -673,7 +685,8 @@ function exportPNG(){ const svg=buildSVG(); const blob=new Blob([svg],{type:'ima
     c.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='飲料店平面圖.png'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }); URL.revokeObjectURL(url); };
   img.onerror=()=>{ alert('產生PNG失敗，改用 PDF 試試'); URL.revokeObjectURL(url); }; img.src=url; }
 function exportPDF(){ const svg=buildSVG(); const w=window.open('','_blank'); if(!w){alert('請允許彈出視窗後再按一次');return;}
-  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>飲料店平面圖</title><style>@page{size:landscape;margin:6mm}html,body{margin:0}svg{width:100%;height:auto;display:block}</style></head><body>'+svg+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},300);}<\/scr'+'ipt></body></html>'); w.document.close(); }
+  const L=layoutCm(), page=L.W>=L.H?'landscape':'portrait';   // 直向單層是直的紙、四層並排是橫的
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>飲料店平面圖</title><style>@page{size:'+page+';margin:6mm}html,body{margin:0}svg{width:100%;height:auto;display:block}</style></head><body>'+svg+'<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},300);}<\/scr'+'ipt></body></html>'); w.document.close(); }
 $('#png').onclick=exportPNG; $('#pdf').onclick=exportPDF;
 
 window.addEventListener('resize',fit);
