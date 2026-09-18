@@ -9,12 +9,14 @@ import worker from "../src/index.js";
 // 最小的 D1 假物件：記下每一句 SQL，回固定結果。
 // changes 模擬條件式 UPDATE／INSERT OR IGNORE 改到幾列（0 = 樂觀鎖衝突）。
 // byId：first() 依 bind 的第一個參數挑列（一條路由要讀兩列時用，例如縮圖讀方案＋結構）。
-function fakeDb(rows = [], { changes = 1, byId = null } = {}) {
+// firstBy(sql, args)：要依 SQL 分辨（例如同一個 id 讀 plans 又讀 revisions）時用；回 undefined 就走 byId／rows。
+function fakeDb(rows = [], { changes = 1, byId = null, firstBy = null } = {}) {
   const calls = [];
   const stmt = (sql, args = []) => ({
     bind: (...a) => { calls.push({ sql, args: a }); return stmt(sql, a); },
     all: async () => ({ results: rows }),
-    first: async () => (byId && args[0] in byId) ? byId[args[0]] : (byId ? null : (rows[0] ?? null)),
+    first: async () => { const r = firstBy ? firstBy(sql, args) : undefined; if (r !== undefined) return r;
+      return (byId && args[0] in byId) ? byId[args[0]] : (byId ? null : (rows[0] ?? null)); },
     run: async () => ({ meta: { changes } }),
   });
   return { calls, prepare: (sql) => { calls.push({ sql, args: [] }); return stmt(sql); } };
@@ -201,6 +203,48 @@ test("POST /api/structure/restore 沒有那一列 → 404", async () => {
 // ── 縮圖 ──────────────────────────────────────────────────────────────
 
 const planRow = (items) => ({ id: "ab12cd", name: "測試", rev: 1, ts: 1, plan: JSON.stringify({ items, measures: [] }) });
+
+// ── 複製版本成新方案 ────────────────────────────────────────────────────
+
+const fork = (id, body) => req(`/api/plans/${id}/fork`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+// 方案列 rev 5；版本 3 的原文跟目前不一樣（fork 要拿版本 3 的，不是目前的）
+const CUR = { id: "ab12cd", name: "目前擺法", rev: 5, ts: 9, plan: JSON.stringify({ items: [{ id: 1, n: "新的", x: 1, y: 1, w: 1, d: 1 }], measures: [] }) };
+const REV3 = { plan: JSON.stringify({ items: [{ id: 1, n: "舊的", x: 5, y: 5, w: 5, d: 5 }], measures: [{ a: 1 }] }) };
+const forkEnv = (revRow) => env([], { firstBy: (sql, args) => /FROM plans/.test(sql) ? (args[0] === "ab12cd" ? CUR : null) : /FROM revisions/.test(sql) ? (args[1] === 3 ? revRow : null) : undefined });
+
+test("POST /api/plans/{id}/fork：拿那一版的原文建新方案 rev 1，原方案不動", async () => {
+  const e = forkEnv(REV3);
+  const res = await worker.fetch(fork("ab12cd", { rev: 3, name: "拿舊的來改" }), e, {});
+  assert.equal(res.status, 200);
+  const o = await res.json();
+  assert.equal(o.rev, 1);
+  assert.match(o.id, /^[a-f0-9]{16}$/, "新 id");
+  assert.notEqual(o.id, "ab12cd");
+  const ins = e.DB.calls.find((c) => /INSERT INTO plans/.test(c.sql) && c.args.length);
+  assert.ok(ins, "走到 INSERT 新方案");
+  assert.deepEqual([ins.args[0], ins.args[1], ins.args[3]], [o.id, "拿舊的來改", REV3.plan], "id／名字／版本 3 的原文一字不差（不是目前的 rev 5）");
+  const rv = e.DB.calls.find((c) => /INSERT.*revisions/i.test(c.sql) && c.args.length);
+  assert.ok(rv && rv.args[0] === o.id && rv.args[1] === 1, "新方案寫 revision 1");
+  assert.ok(!e.DB.calls.some((c) => /UPDATE plans/.test(c.sql)), "原方案沒被改");
+});
+
+test("POST fork：name 缺省為「<原名> · 版本 <rev>」", async () => {
+  const e = forkEnv(REV3);
+  const res = await worker.fetch(fork("ab12cd", { rev: 3 }), e, {});
+  assert.equal(res.status, 200);
+  const ins = e.DB.calls.find((c) => /INSERT INTO plans/.test(c.sql) && c.args.length);
+  assert.equal(ins.args[1], "目前擺法 · 版本 3");
+});
+
+test("POST fork：那一版不存在 → 404、不 INSERT；方案不存在 → 404", async () => {
+  const e = forkEnv(null);
+  const res = await worker.fetch(fork("ab12cd", { rev: 3 }), e, {});
+  assert.equal(res.status, 404);
+  assert.deepEqual(await res.json(), { error: "no such version" });
+  assert.ok(!e.DB.calls.some((c) => /INSERT/.test(c.sql)), "沒有 INSERT");
+  const res2 = await worker.fetch(fork("ffffff", { rev: 3 }), forkEnv(REV3), {});
+  assert.equal(res2.status, 404);
+});
 
 test("縮圖不含 floor=2 的 item", async () => {
   const items = [

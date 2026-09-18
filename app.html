@@ -971,6 +971,12 @@ loadStructure();
         if(!confirm('回復到版本 '+h.rev+'？\n（目前內容會先自動存成新版本，可再回復回來）'))return;
         await fetch(API+'/'+p.id+'/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rev:h.rev})});
         dlg.close(); if(cur&&cur.id===p.id){ openPlan(p.id); } else { loadList(); }
+      }), btn('複製成新方案','',async()=>{
+        // 複製版本（2026-09-18）：把這一版 fork 成新方案，原方案與它的版本都不動；做完直接開新方案
+        const name=prompt('新方案名稱：',p.name+' · 版本 '+h.rev); if(name===null)return;
+        try{ const r=await fetch(API+'/'+p.id+'/fork',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rev:h.rev,name:name.trim()||undefined})});
+          if(!r.ok) throw new Error(r.status); const o=await r.json(); dlg.close(); openPlan(o.id); }
+        catch(_){ alert('複製失敗'); }
       }));
       list.appendChild(row); });
   }
