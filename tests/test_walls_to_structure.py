@@ -67,22 +67,34 @@ def test_merge_structure_keeps_existing_and_skips_dupes():
     assert all(not any(k.startswith("_") for k in e) for e in merged), "_from 不進伺服器"
 
 
+NEW_WALL = WALL(900, id=8)
+LATEST_A = {**PLAN_A, "rev": 349, "plan": {"items": PLAN_A["plan"]["items"] + [NEW_WALL], "measures": []}}
+
+
 def _fake(fail_structure=False, conflict_once=None):
+    """假伺服器：結構 rev 從 15 起；conflict_once 指定哪份方案第一次 PUT 回 409（之後 GET 回多一道新牆的最新版）。"""
     calls = []
-    state = {"conflicted": False}
+    state = {"conflicted": False, "struct_rev": 15, "struct_elements": []}
 
     def http_fn(method, path, body=None, base=""):
         calls.append((method, path, body))
         if method == "PUT" and path == "/api/structure":
-            return (409, {"ok": False, "rev": 99}) if fail_structure else (200, {"ok": True, "rev": 16})
+            if fail_structure:
+                return (409, {"ok": False, "rev": 99})
+            if body["baseRev"] != state["struct_rev"]:
+                return (409, {"ok": False, "rev": state["struct_rev"]})
+            state["struct_rev"] += 1; state["struct_elements"] = body["structure"]["elements"]
+            return (200, {"ok": True, "rev": state["struct_rev"]})
+        if method == "GET" and path == "/api/structure":
+            return (200, {"rev": state["struct_rev"], "elements": state["struct_elements"]})
         if method == "PUT" and path.startswith("/api/plans/"):
             pid = path.rsplit("/", 1)[1]
             if conflict_once == pid and not state["conflicted"]:
                 state["conflicted"] = True
-                return (409, {"rev": 349, "plan": PLAN_A["plan"]})
+                return (409, {"rev": 349, "plan": LATEST_A["plan"]})
             return (200, {"ok": True, "rev": (body or {}).get("baseRev", 0) + 1})
         if method == "GET" and path == "/api/plans/a":
-            return (200, {**PLAN_A, "rev": 349})
+            return (200, LATEST_A)
         raise AssertionError("不預期的呼叫 " + method + " " + path)
     return http_fn, calls
 
@@ -96,25 +108,33 @@ def test_apply_writes_structure_first_and_never_touches_plans_on_failure():
     assert len(calls[0][2]["structure"]["elements"]) == 5
 
 
-def test_apply_409_leaves_that_plan_untouched_and_rerun_picks_up_new_wall():
-    # 第一次：a 撞 409（有人剛加了一道新牆）→ a 不動、b 正常、回 False；不重 GET、不 strip 最新版
+def test_apply_409_refetches_plan_tops_up_structure_then_strips():
+    # a 第一次 PUT 撞 409（有人剛加了一道新牆 x=900）→ 腳本自己重 GET a → 新牆補進結構（新 rev）→ 再 strip a 用 rev 349 PUT → b 照常
     http_fn, calls = _fake(conflict_once="a")
-    ok = w2s.apply("http://x", [PLAN_A, PLAN_B, PLAN_C], {"rev": 15, "elements": [{"id": "beam-1", "kind": "beam", "floor": 1, "x": 0, "y": 0, "w": 1300, "d": 30}]},
-                   w2s.collect_partitions([PLAN_A, PLAN_B]), http_fn=http_fn)
-    assert ok is False
+    beam = {"id": "beam-1", "kind": "beam", "floor": 1, "x": 0, "y": 0, "w": 1300, "d": 30}
+    ok = w2s.apply("http://x", [PLAN_A, PLAN_B, PLAN_C], {"rev": 15, "elements": [beam]}, w2s.collect_partitions([PLAN_A, PLAN_B]), http_fn=http_fn)
+    assert ok is True
     seq = [(m, p) for m, p, _ in calls]
-    assert seq == [("PUT", "/api/structure"), ("PUT", "/api/plans/a"), ("PUT", "/api/plans/b")], "a 409 後不重試；c 沒有牆不碰"
-    assert len(calls[0][2]["structure"]["elements"]) == 6, "現有的梁＋5 道牆"
-    put_b = calls[2][2]
+    assert seq == [("PUT", "/api/structure"), ("PUT", "/api/plans/a"), ("GET", "/api/plans/a"), ("GET", "/api/structure"), ("PUT", "/api/structure"),
+                   ("PUT", "/api/plans/a"), ("PUT", "/api/plans/b")], "409 → 重 GET a → 補結構 → 再 PUT a → b；c 沒牆不碰"
+    assert len(calls[0][2]["structure"]["elements"]) == 6, "第一次結構：梁＋5 道牆"
+    topup = calls[4][2]
+    assert topup["baseRev"] == 16 and len(topup["structure"]["elements"]) == 7 and any(e["x"] == 900 for e in topup["structure"]["elements"]), "補的那次用新 rev、只多那道新牆"
+    second_put_a = calls[5][2]
+    assert second_put_a["baseRev"] == 349 and [i["id"] for i in second_put_a["plan"]["items"]] == [1], "strip 的是最新版（含新牆）"
+    put_b = calls[6][2]
     assert put_b["baseRev"] == 179 and [i["id"] for i in put_b["plan"]["items"]] == [7]
-    # 重跑：a 的最新版多了一道新牆 → 新牆進結構（舊的 5 道已在，略過）、a 再被 strip
-    new_wall = WALL(900, id=8)
-    latest_a = {**PLAN_A, "rev": 349, "plan": {"items": PLAN_A["plan"]["items"] + [new_wall], "measures": []}}
-    existing = [{"id": "beam-1", "kind": "beam", "floor": 1, "x": 0, "y": 0, "w": 1300, "d": 30}] + \
-        [{k: v for k, v in e.items() if not k.startswith("_")} for e in w2s.collect_partitions([PLAN_A, PLAN_B])]
-    http_fn2, calls2 = _fake()
-    ok2 = w2s.apply("http://x", [latest_a, PLAN_C], {"rev": 16, "elements": existing}, w2s.collect_partitions([latest_a]), http_fn=http_fn2)
-    assert ok2 is True
-    sent = calls2[0][2]["structure"]["elements"]
-    assert len(sent) == 7 and any(e["x"] == 900 for e in sent), "只多了那道新牆"
-    assert calls2[1][2]["baseRev"] == 349 and [i["id"] for i in calls2[1][2]["plan"]["items"]] == [1]
+
+
+def test_apply_gives_up_after_retries():
+    # 每次都 409：重做 retries 次後標失敗、不繼續撞
+    calls = []
+    def http_fn(method, path, body=None, base=""):
+        calls.append((method, path))
+        if method == "PUT" and path == "/api/structure": return (200, {"ok": True, "rev": 16})
+        if method == "PUT": return (409, {"rev": 999})
+        if method == "GET": return (200, {**PLAN_A, "rev": 999})
+        raise AssertionError(path)
+    ok = w2s.apply("http://x", [PLAN_A], {"rev": 15, "elements": []}, w2s.collect_partitions([PLAN_A]), http_fn=http_fn, retries=2)
+    assert ok is False
+    assert calls.count(("PUT", "/api/plans/a")) == 3 and calls.count(("GET", "/api/plans/a")) == 2
