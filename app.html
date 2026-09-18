@@ -542,9 +542,11 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
       '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>';
     const wl=$('#wl'),wt=$('#wt'); if(wl)wl.onchange=()=>{it.w=Math.max(10,+wl.value||10);save();render();}; if(wt)wt.onchange=()=>{it.d=Math.max(4,+wt.value||10);save();render();}; return; }
   // 一般設備：名稱與長／寬／高可改（匯入的家具靠這裡修尺寸）；位置只能拖，不開 X／Y
-  const num=(id,v,min)=>'<input id="'+id+'" type="number" min="'+min+'" step="1" value="'+(v==null||v===''?'':Math.round(v))+'" style="width:58px">';
+  const rv=v=>(v==null||v===''?'':Math.round(v));
   $('#selBody').innerHTML='<div class="kv"><input id="iname" value="'+esc(it.n)+'" style="width:170px;font-weight:700"></div>'+
-    '<div class="kv">長 '+num('iw',it.w,5)+' 寬 '+num('id',it.d,5)+' 高 '+num('ih',it.h||'',0)+' cm</div>'+
+    '<div class="kv">長 <input id="iw" type="number" min="5" step="1" value="'+rv(it.w)+'" style="width:58px">'+
+    ' 寬 <input id="id" type="number" min="5" step="1" value="'+rv(it.d)+'" style="width:58px">'+
+    ' 高 <input id="ih" type="number" min="0" step="1" value="'+rv(it.h||'')+'" style="width:58px"> cm</div>'+
     '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>'+
     '<div class="kv">距牆 後牆'+Math.round(it.x)+' 門口側'+Math.round(PLAN_W-it.x-it.w)+' 樓梯側'+Math.round(it.y)+' 對面牆'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'')+
