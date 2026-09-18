@@ -465,7 +465,8 @@ function snapPos(it,nx,ny){ let sx=nx,sy=ny;
 
 function renderGaps(){ panels.forEach(pn=>[...pn.querySelectorAll('.gap,.gapln')].forEach(e=>e.remove()));
   const g=$('#gaps'); if(!g||!g.checked) return;
-  panels.forEach((pn,f)=>{ const here=onFloor(items,f);
+  // 參與間距的：這層的設備＋這層的房間隔層（牆原本是設備時就會標；搬進結構後照樣要標）
+  panels.forEach((pn,f)=>{ const here=onFloor(items,f).concat(elementsOn(elements,f).filter(e=>e.kind==='partition'));
   here.forEach(a=>{ if(a.door||a.win||a.hidden||isParked(a))return; let best=null,bg=1e9;
     here.forEach(b=>{ if(b===a||b.door||b.win||b.hidden||isParked(b))return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
       const gg=b.x-(a.x+a.w); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
