@@ -280,9 +280,11 @@ function buildPanels(){ planwrap.innerHTML=''; panels.clear();
   viewFloors().forEach(f=>{ const p=document.createElement('div'); p.className='plan'+(f===curFloor?' cur':'')+(structMode?' structmode':'')+(measuring?' measuring':''); p.dataset.floor=f;
     const g=document.createElement('div'); g.className='grid'; p.appendChild(g);
     const lb=document.createElement('div'); lb.className='plab'; lb.textContent=f+'F'; p.appendChild(lb);
-    // 點面板空白：這層變成目前樓層、清掉選取。量測模式下是下一個量測點。
+    // 面板 pointerdown 一律先切到這層（capture 階段，跑在設備／結構元件的 handler 之前；安靜切、不重畫，正在按的元素要留著）
+    p.addEventListener('pointerdown',e=>{ if(!measuring&&f!==curFloor) setFloorQuiet(f); },true);
+    // 點面板空白：清掉選取、重畫。量測模式下是下一個量測點。
     p.addEventListener('pointerdown',e=>{ if(measuring){ handleMeasureClick(e); return; }
-      if(e.target===p||e.target.classList.contains('grid')){ sel=null; selEl=null; if(f!==curFloor){ setFloorQuiet(f); } render(); } });
+      if(e.target===p||e.target.classList.contains('grid')){ sel=null; selEl=null; render(); } });
     panels.set(f,p); planwrap.appendChild(p); }); }
 function setView(patch){ Object.assign(view,patch); saveView();
   $('#orientToggle').checked=isV(); $('#allFloors').checked=view.all;
