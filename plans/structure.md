@@ -44,7 +44,7 @@ contract_commit: "2b80715d6eba2a6173bbb2e8b05767e6147ffa7d"
   Completion criterion: `grep -c 'id="addStairs"' app.html` 回 0；`grep -c 'id="addWall"' app.html` 回 0；`grep -c 'id="addPartition"' app.html` 回 1；`grep -c 'id="ecopy"' app.html`、`'id="emove"'`、`'id="icopy"'`、`'id="imove"'` 各回 1；`grep -c "cloneTo(" app.html` ≥ 2；`cd worker && node --test` 全綠。
 
 - [ ] D4: 牆搬進結構的遷移腳本
-  `scripts/walls_to_structure.py`：GET 全部方案，收集 `wall:true` 設備 → `partition` 元件（floor 照設備、name「房間隔層」、id `partition-<hash>`），同 (floor,x,y,w,d) 只留一筆；PUT 結構（baseRev 現值）成功後才逐份 PUT 方案移除 wall 設備（baseRev 各自現值，409 就重 GET 重做）。預設 dry-run 印差異；`--apply` 才寫。純函式 `collect_partitions(plans)`／`strip_walls(plan)`。
+  `scripts/walls_to_structure.py`：GET 全部方案，收集 `wall:true` 設備 → `partition` 元件（floor 照設備、name「房間隔層」、id 直接由值組成 `partition-<floor>-<x>-<y>-<w>x<d>`，不 hash——截短 hash 會碰撞、碰撞＝靜默掉一道牆），同 (floor,x,y,w,d) 只留一筆（完全相同才合，不做容差）；PUT 結構（baseRev 現值）成功後才逐份 PUT 方案移除 wall 設備（baseRev 各自現值，409 就重 GET 重做）。預設 dry-run 印差異；`--apply` 才寫。純函式 `collect_partitions(plans)`／`strip_walls(plan)`。
   Completion criterion: `tests/test_walls_to_structure.py` 含測試名 `test_collect_dedupes_identical_walls_across_plans`（兩份方案三道相同一道不同 → 5 筆 partition）與 `test_strip_walls_keeps_everything_else`；`python3 -m pytest tests/test_walls_to_structure.py -q` 全綠。
 
 - [ ] D5: 匯入腳本 `--keep-1f`、牆進結構
@@ -53,7 +53,7 @@ contract_commit: "2b80715d6eba2a6173bbb2e8b05767e6147ffa7d"
 
 - [ ] D6: 上線＋遷移＋匯入＋readback
   順序：`npm run deploy`（D1–D3）→ 本機 miniflare 用正式站三份方案副本跑 `walls_to_structure.py --apply` 驗（1F 5 道 partition、方案裡 wall 為 0）→ 正式站跑 `walls_to_structure.py --apply` → `dwg_import.py --apply`（keep-1f）→ drinkshop-new：開新方案、四層並排、2F 廁所「複製到 3F」、1F 一件家具「搬到 2F」、存、重載。
-  Completion criterion: `docs/d8-readback.md` 記錄 `curl -s https://drinkshop-new.andremusic.dev/api/structure` 原文：遷移後（1F 六筆原 id 不變＋5 筆 partition）、匯入後（再加 2–4F 梁 9、樓梯 3、廁所 2、partition 20）、複製後（3F 兩筆 bath）；三份舊方案 `wall:true` 計數皆 0；新方案 id 與 items 數（1F 32＋2–4F 30＝62）；`git rev-parse HEAD`。
+  Completion criterion: `docs/d8-readback.md` 記錄 `curl -s https://drinkshop-new.andremusic.dev/api/structure` 原文：遷移後（1F 六筆原 id 不變＋partition：三份方案完全相同的牆合成一筆、位置差幾 cm 的各留一筆——正式站實測是 6 筆）、匯入後（再加 2–4F 梁 9、樓梯 3、廁所 2、partition 20）、複製後（3F 兩筆 bath）；三份舊方案 `wall:true` 計數皆 0；新方案 id 與 items 數（1F 32＋2–4F 30＝62）；deploy 當下的 `git rev-parse HEAD`（readback 檔本身的 commit 會再推進 HEAD，記的是 deploy 那一刻）。
 
 ## 不做
 
