@@ -349,6 +349,8 @@ const DEFAULT=[
   {n:'餐具架',c:'shelf',w:30,d:60,x:280,y:225,h:165},
 ];
 let items=[], scale=1, sel=null, uid=1;
+// 設備／量測線的新 id：產生當下再跟現有最大 id 對一次，不靠載入路徑把 uid 推高（多選／整層複製一次會拿很多個）
+function nextId(){ let mx=uid; for(const i of items){ const v=+i.id; if(v>=mx)mx=v+1; } for(const m of measures){ const v=+m.id; if(v>=mx)mx=v+1; } uid=mx; return uid++; }
 // 多選（2026-09-18）：selSet 是選取集合、sel 是主選（最後點的那件、面板顯示的那件）。
 // 不變量由 render() 維持：sel==null → 集合清空；sel 不在集合裡（單選換人）→ 集合重設成只有 sel。
 let selSet=new Set();
@@ -575,11 +577,11 @@ function rotate(){ if(structMode||sel==null)return; const it=items.find(i=>i.id=
 function dup(){ if(structMode||sel==null)return;
   if(selSet.size>1){   // 多選可跨面板累積：按各件自己的樓層分組複製，不是全丟到 curFloor（D3）
     const byFloor=new Map(); [...selSet].forEach(id=>{ const o=items.find(i=>i.id===id); if(!o)return; const f=floorOf(o); if(!byFloor.has(f))byFloor.set(f,[]); byFloor.get(f).push(id); });
-    let made=[]; byFloor.forEach((ids,f)=>{ made=made.concat(cloneMany(items,ids,f,()=>uid++)); });
+    let made=[]; byFloor.forEach((ids,f)=>{ made=made.concat(cloneMany(items,ids,f,nextId)); });
     if(!made.length)return;
     items=items.concat(made); selSet=new Set(made.map(i=>i.id)); sel=made[made.length-1].id; save(); render(); return; }
   const it=items.find(i=>i.id===sel); if(!it)return;
-  const c=JSON.parse(JSON.stringify(it)); c.id=uid++; [c.x,c.y]=clampPos(c,it.x+30,it.y+30); items.push(c); sel=c.id; save(); render(); }
+  const c=JSON.parse(JSON.stringify(it)); c.id=nextId(); [c.x,c.y]=clampPos(c,it.x+30,it.y+30); items.push(c); sel=c.id; save(); render(); }
 function del(){ if(structMode){ delElement(); return; } if(sel==null)return; const gone=selSet.size>1?selSet:new Set([sel]); items=items.filter(i=>!gone.has(i.id)); sel=null; save(); render(); }
 function hideSel(){ if(structMode||sel==null)return; const ids=selSet.size>1?selSet:new Set([sel]); items.forEach(i=>{ if(ids.has(i.id))i.hidden=true; }); sel=null; save(); render(); }
 
@@ -625,12 +627,12 @@ function updateSelMany(){ const n=selSet.size; $('#selBody').style.color='var(--
     '<div class="kv"><select id="mcopy">'+floorOpts('複製到')+'</select> <select id="mmove">'+floorOpts('搬到')+'</select></div>'+
     '<div class="rowbtn"><button id="mdup">⧉ 複製（同層）</button><button id="mhide">🙈 隱藏</button><button class="warn" id="mdel">🗑 刪除 '+n+' 件</button></div>'+
     '<div class="kv" style="color:var(--sub)">拖其中一件，整群一起動；再點一件可取消選取</div>';
-  bindFloorSelect('mcopy',f=>{ const made=cloneMany(items,[...selSet],f,()=>uid++); items=items.concat(made); save(); setFloor(f); selSet=new Set(made.map(i=>i.id)); sel=made[made.length-1].id; render(); });
+  bindFloorSelect('mcopy',f=>{ const made=cloneMany(items,[...selSet],f,nextId); items=items.concat(made); save(); setFloor(f); selSet=new Set(made.map(i=>i.id)); sel=made[made.length-1].id; render(); });
   bindFloorSelect('mmove',f=>{ const ids=[...selSet]; items=moveMany(items,ids,f); save(); setFloor(f); selSet=new Set(ids); sel=ids[ids.length-1]; render(); });
   const bd=$('#mdup'); if(bd)bd.onclick=dup; const bh=$('#mhide'); if(bh)bh.onclick=hideSel; const bx=$('#mdel'); if(bx)bx.onclick=del; }
 // 設備的「複製到 nF」「搬到 nF」：跨層同位置、同層偏移 30；做完切到目標層並選取那一件（門窗牆也適用）
 function addItemFloorRow(it){ const d=document.createElement('div'); d.className='kv'; d.innerHTML='<select id="icopy">'+floorOpts('複製到')+'</select> <select id="imove">'+floorOpts('搬到')+'</select>'; $('#selBody').appendChild(d);
-  bindFloorSelect('icopy',f=>{ const c=cloneTo(it,f,uid++); items.push(c); save(); setFloor(f); sel=c.id; render(); });
+  bindFloorSelect('icopy',f=>{ const c=cloneTo(it,f,nextId()); items.push(c); save(); setFloor(f); sel=c.id; render(); });
   bindFloorSelect('imove',f=>{ const m=moveTo(it,f); items=items.map(x=>x.id===it.id?m:x); save(); setFloor(f); sel=m.id; render(); }); }
 // 清單預設收合（要隱藏特定東西再打開）；開合狀態記在這台瀏覽器
 let listOpen=false; try{ listOpen=localStorage.getItem('drinkshop_list')==='open'; }catch(e){}
@@ -648,7 +650,7 @@ function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.fil
       const pn=panelOf(floorOf(it)), sr=toScreen(V(),it); if(pn) stage.scrollTo({left:pn.offsetLeft+sr.sx*scale-120,top:pn.offsetTop+sr.sy*scale-80,behavior:'smooth'}); }; wrap.appendChild(c); }); }
 
 $('#addDoor').onclick=()=>{ const w=Math.max(20,+prompt('門寬(cm)＝開門半徑：','100')||100);
-  items.push({id:uid++,n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true,flip:false,floor:curFloor}); sel=uid-1; save(); render(); };
+  items.push({id:nextId(),n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true,flip:false,floor:curFloor}); sel=uid-1; save(); render(); };
 // 「＋ 窗戶」「＋ 隔間牆」2026-09-17 拿掉：窗戶不需要；隔間牆改成結構層的「＋ 房間隔層」（全部方案共用）。
 // 舊方案裡已有的窗戶／隔間牆設備照常顯示、可選可刪，只是不能再新增。
 $('#floorTabs').onclick=(e)=>{ const b=e.target.closest('button'); if(b&&b.dataset.floor) setFloor(+b.dataset.floor); };
@@ -684,7 +686,7 @@ function handleMeasureClick(e){ e.stopPropagation(); e.preventDefault();
   if(f!==curFloor){ mp=null; setFloorQuiet(f); }   // 換面板＝換層，第一點作廢
   const r=pn.getBoundingClientRect();
   const pt=snapPoint(e.clientX-r.left, e.clientY-r.top);
-  if(!mp){ mp=pt; renderMeasures(); } else { measures.push({id:uid++,a:mp,b:pt,floor:curFloor}); mp=null; saveM(); render(); } }
+  if(!mp){ mp=pt; renderMeasures(); } else { measures.push({id:nextId(),a:mp,b:pt,floor:curFloor}); mp=null; saveM(); render(); } }
 const curM=()=>onFloor(measures,curFloor);
 function renderMeasures(){ panels.forEach((pn,f)=>{ const old=pn.querySelector('#measLayer'); if(old)old.remove(); [...pn.querySelectorAll('.measlb')].forEach(e=>e.remove());
   const NS='http://www.w3.org/2000/svg', svg=document.createElementNS(NS,'svg'); svg.id='measLayer';
@@ -706,7 +708,7 @@ $('#measure').onclick=()=>{ measuring=!measuring; mp=null; $('#measure').classLi
 $('#clearM').onclick=()=>{ if(curM().length&&confirm('清除 '+curFloor+'F 的所有量測線？')){ const gone=new Set(curM().map(m=>m.id)); measures=measures.filter(m=>!gone.has(m.id)); mp=null; saveM(); render(); } };
 const od=$('#objDlg'); $('#addObj').onclick=()=>od.showModal(); $('#oCancel').onclick=()=>od.close();
 $('#oOk').onclick=()=>{ const n=$('#oName').value.trim()||'物件',w=+$('#oW').value||60,d=+$('#oD').value||60;
-  items.push({id:uid++,n,c:'shelf',w,d,x:40,y:40,h:0,rot:0,door:false,floor:curFloor}); sel=uid-1; od.close(); save(); render(); };
+  items.push({id:nextId(),n,c:'shelf',w,d,x:40,y:40,h:0,rot:0,door:false,floor:curFloor}); sel=uid-1; od.close(); save(); render(); };
 
 const SK='drinkshop_saves';
 const getSaves=()=>{try{return JSON.parse(localStorage.getItem(SK))||{};}catch(e){return{};}};
@@ -806,7 +808,7 @@ $('#copyFloor').onchange=e=>{ const to=+e.target.value; e.target.value=''; if(!F
   const from=curFloor, nItems=onFloor(items,to).length, nEls=elementsOn(elements,to).filter(x=>COPYABLE_KINDS.includes(x.kind)).length;
   const sItems=onFloor(items,from).length, sEls=elementsOn(elements,from).filter(x=>COPYABLE_KINDS.includes(x.kind)).length;
   if(!confirm('會先清掉 '+to+'F 的 '+nItems+' 件設備、'+nEls+' 個廁所／房間隔層，再把 '+from+'F 的 '+sItems+' 件設備、'+sEls+' 個廁所／房間隔層複製過去。\n（梁、樓梯、玄關不動；方案與結構都有版本紀錄可回復）\n\n確定？'))return;
-  const r=copyFloor(items,elements,from,to,()=>uid++,k=>elId(k)); items=r.items; elements=r.elements; sel=null; selEl=null;
+  const r=copyFloor(items,elements,from,to,nextId,k=>elId(k)); items=r.items; elements=r.elements; sel=null; selEl=null;
   save(); saveStructure(); setFloor(to); toast(from+'F 已複製到 '+to+'F'); };
 buildPanels();
 setFloor(curFloor);   // 同步 tab 樣式（上次看的樓層記在這台瀏覽器）
