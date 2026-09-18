@@ -552,10 +552,11 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'')+
     (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join('');
   const nm=$('#iname'); if(nm)nm.onchange=()=>{ const v=nm.value.trim(); if(v){ it.n=v; save(); render(); } else nm.value=it.n; };
-  const bindDim=(id,k,min)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const raw=el.value.trim();
+  // 長寬夾在圖框內（跟結構元件面板一樣）：超過會讓 clampPos 的範圍變負、距牆出現負值
+  const bindDim=(id,k,min,max)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const raw=el.value.trim();
     if(k==='h'&&raw===''){ delete it.h; save(); render(); return; }   // 高度可空
-    const v=Math.max(min,Math.round(+raw||0)); it[k]=v; if(k!=='h')[it.x,it.y]=clampPos(it,it.x,it.y); save(); render(); }; };
-  bindDim('iw','w',5); bindDim('id','d',5); bindDim('ih','h',0); }
+    const v=Math.min(max,Math.max(min,Math.round(+raw||0))); it[k]=v; if(k!=='h')[it.x,it.y]=clampPos(it,it.x,it.y); save(); render(); }; };
+  bindDim('iw','w',5,PLAN_W); bindDim('id','d',5,PLAN_H); bindDim('ih','h',0,10000); }
 // 清單預設收合（要隱藏特定東西再打開）；開合狀態記在這台瀏覽器
 let listOpen=false; try{ listOpen=localStorage.getItem('drinkshop_list')==='open'; }catch(e){}
 function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.filter(i=>i.hidden).length; wrap.classList.toggle('closed',!listOpen);
