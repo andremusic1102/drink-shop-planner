@@ -120,6 +120,32 @@ export function moveMany(items, ids, toFloor) {
   return (Array.isArray(items) ? items : []).map((it) => (want.has(it.id) ? moveTo(it, toFloor) : it));
 }
 
+/**
+ * 拉一邊（2026-09-18 定案）：結構模式下拖邊把手，只改那一邊、對邊不動。
+ * side：x0 後牆側、x1 門口側、y0 樓梯側、y1 對面牆側（四邊地標，CONTEXT.md）。delta 是模型座標的位移（cm）。
+ * 最短 5，不翻面；拉出框夾在框邊。回傳新物件，不動原物件。
+ */
+export const STRETCH_MIN = 5;
+export function stretchSide(el, side, delta) {
+  const x = Number(el.x) || 0, y = Number(el.y) || 0, w = Number(el.w) || 0, d = Number(el.d) || 0;
+  const dv = Number(delta) || 0;
+  const out = { ...el };
+  if (side === "x0") { const nx = Math.min(Math.max(0, x + dv), x + w - STRETCH_MIN); out.x = nx; out.w = x + w - nx; }
+  else if (side === "x1") { out.w = Math.max(STRETCH_MIN, Math.min(1300 - x, w + dv)); }
+  else if (side === "y0") { const ny = Math.min(Math.max(0, y + dv), y + d - STRETCH_MIN); out.y = ny; out.d = y + d - ny; }
+  else if (side === "y1") { out.d = Math.max(STRETCH_MIN, Math.min(375 - y, d + dv)); }
+  else return out;
+  return out;
+}
+
+/** 哪幾邊可以拉：隔層只有長軸兩端（w≥d 拉 x0/x1，否則 y0/y1），走道／廁所四邊，其他不能拉。 */
+export function stretchSides(el) {
+  if (!el) return [];
+  if (el.kind === "partition") return (Number(el.w) || 0) >= (Number(el.d) || 0) ? ["x0", "x1"] : ["y0", "y1"];
+  if (el.kind === "walkway" || el.kind === "bath") return ["x0", "x1", "y0", "y1"];
+  return [];
+}
+
 /** 結構元件種類的中文名（畫標籤用）。 */
 export const KIND_LABEL = { beam: "梁", stairs: "樓梯", bath: "廁所", entry: "玄關", partition: "房間隔層", walkway: "走道" };
 

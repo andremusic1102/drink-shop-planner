@@ -137,6 +137,8 @@
   .plan.structmode .it{pointer-events:none;opacity:.45}
   .plan.structmode .fx{pointer-events:auto;cursor:grab;z-index:11;outline:1.5px dashed var(--accent);outline-offset:-2px}
   .plan.structmode .fx.sel{outline:2.5px solid var(--sel);z-index:13}
+  /* 邊把手：結構模式選中的隔層／走道／廁所，拖一邊只改那一邊（隔層只有長軸兩端） */
+  .hd{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--sel);border:2px solid #fff;box-shadow:0 0 0 1px var(--sel);z-index:14;pointer-events:auto;touch-action:none}
   .proj.bad{border-color:var(--sel);color:var(--sel);opacity:.9;border-width:2.5px}
   .fx.bad{box-shadow:inset 0 0 0 3px var(--sel)}
   .it.shrinebad{box-shadow:0 0 0 3px var(--sel), 0 0 12px var(--sel)}
@@ -246,8 +248,8 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany, copyFloor, COPYABLE_KINDS, onWalkway } from './floors.js';
-import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot } from './view.js';
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany, copyFloor, COPYABLE_KINDS, onWalkway, stretchSide, stretchSides } from './floors.js';
+import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot, isVertical } from './view.js';
 // MARGIN：畫布四周的空白；門口側（+x 之外）留 ENTRY_MARGIN，暫放時放得下最長的家具（DWG 那批 274）
 const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, ENTRY_MARGIN=300, PANEL_GAP=120;
 const CAT={counter:['var(--counter)','var(--counterB)'],cold:['var(--cold)','var(--coldB)'],water:['var(--water)','var(--waterB)'],
@@ -414,7 +416,8 @@ function renderFloor(f,pn,bad){
     place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+esc(elLabel(s))+'</span>'; d.dataset.eid=s.id;
     if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl);
     else if(mode()==='structure') d.addEventListener('pointerdown',selectOnlyEl);   // 樓梯：不可拖但可選（面板才能複製／搬／刪）
-    pn.appendChild(d); });
+    pn.appendChild(d);
+    if(mode()==='structure'&&selEl===s.id) addHandles(d,s); });
   onFloor(items,f).forEach(it=>{ if(it.hidden)return;
     const parked=isParked(it);
     const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(isSel(it.id)?' sel':'')+(bad.has(it.id)?' bad shrinebad':'')+(parked?' parked':'');
@@ -550,11 +553,34 @@ function onDragEl(e){ if(!dragEl)return; const s=dragEl.s;
 function endDragEl(){ if(!dragEl)return; const el=dragEl.el;
   el.removeEventListener('pointermove',onDragEl); el.removeEventListener('pointerup',endDragEl); el.removeEventListener('pointercancel',endDragEl);
   dragEl=null; saveStructure(); render(); }
+// 邊把手（2026-09-18）：結構模式選中的隔層／走道／廁所，每個可拉的邊一顆圓點（stretchSides 決定哪幾邊）。
+// 拖把手走 stretchSide：只改那一邊、對邊不動；放開存結構。把手自己吃掉 pointerdown，不會觸發整件移動。
+function layoutHandles(fxEl,s){ const v=V(), o=toScreen(v,s);
+  fxEl.querySelectorAll('.hd').forEach(h=>{ const side=h.dataset.side;
+    const mx=side==='x0'?s.x:side==='x1'?s.x+s.w:s.x+s.w/2, my=side==='y0'?s.y:side==='y1'?s.y+s.d:s.y+s.d/2;   // 那一邊的中點（模型座標）
+    const p=toScreenPoint(v,mx,my); h.style.left=(p.sx-o.sx)*scale+'px'; h.style.top=(p.sy-o.sy)*scale+'px';
+    h.style.cursor=((side[0]==='x')!==isVertical(v))?'ew-resize':'ns-resize'; }); }
+function addHandles(fxEl,s){ stretchSides(s).forEach(side=>{ const h=document.createElement('div'); h.className='hd'; h.dataset.side=side; h.title='拖這裡只改這一邊';
+    h.addEventListener('pointerdown',startStretch); fxEl.appendChild(h); }); layoutHandles(fxEl,s); }
+let stretch=null;
+function startStretch(e){ if(measuring){ handleMeasureClick(e); return; } const h=e.currentTarget, fxEl=h.parentElement, s=elements.find(x=>x.id===fxEl.dataset.eid); if(!s)return;
+  stretch={s,h,fxEl,side:h.dataset.side,sx:e.clientX,sy:e.clientY,orig:{x:s.x,y:s.y,w:s.w,d:s.d}};
+  try{h.setPointerCapture(e.pointerId);}catch(_){}
+  h.addEventListener('pointermove',onStretch); h.addEventListener('pointerup',endStretch); h.addEventListener('pointercancel',endStretch);
+  e.preventDefault(); e.stopPropagation(); }
+function onStretch(e){ if(!stretch)return; const {s,side,orig}=stretch;
+  const dm=fromScreenDelta(V(),(e.clientX-stretch.sx)/scale,(e.clientY-stretch.sy)/scale);
+  const r=stretchSide(orig,side,side[0]==='x'?dm.dx:dm.dy);
+  s.x=Math.round(r.x); s.y=Math.round(r.y); s.w=Math.round(r.w); s.d=Math.round(r.d);
+  place(stretch.fxEl,s.x,s.y,s.w,s.d); layoutHandles(stretch.fxEl,s); updateSel(); }
+function endStretch(){ if(!stretch)return; const h=stretch.h;
+  h.removeEventListener('pointermove',onStretch); h.removeEventListener('pointerup',endStretch); h.removeEventListener('pointercancel',endStretch);
+  stretch=null; saveStructure(); render(); }
 // 「複製到 nF」「搬到 nF」下拉（結構元件與設備共用）：第一個選項是提示，選了樓層才動作，動作後 select 回到提示
 function floorOpts(label){ return '<option value="">'+label+'…</option>'+FLOORS.map(f=>'<option value="'+f+'">'+f+'F</option>').join(''); }
 function bindFloorSelect(id,fn){ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const f=+el.value; el.value=''; if(FLOORS.includes(f)) fn(f); }; }
 function updateSelEl(){ const s=elements.find(x=>x.id===selEl);
-  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／廁所／房間隔層／玄關來移動或改尺寸；樓梯固定不可拖；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
+  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／廁所／房間隔層／走道／玄關來移動或改尺寸；隔層／走道／廁所選中後拖邊上的圓點可以只拉一邊；樓梯固定不可拖；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
   $('#selBody').style.color='var(--ink)'; $('#selBtns').style.display='none';
   const num=(id,v)=>'<input id="'+id+'" type="number" step="1" value="'+Math.round(v)+'" style="width:64px">';
   $('#selBody').innerHTML='<div class="kv"><b>'+esc(KIND_LABEL[s.kind]||s.kind)+'</b> · '+floorOf(s)+'F'+(s.kind==='stairs'?' · <span style="color:var(--sub)">樓梯固定，不可拖</span>':'')+'</div>'+
