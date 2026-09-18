@@ -6,7 +6,8 @@
 做法：
   1. GET /api/plans 與每份 GET /api/plans/<id>，收集 wall:true 的設備
   2. 轉成 partition 元件：floor 照設備（缺＝1F）、name「房間隔層」、id partition-<hash>；
-     同 (floor, x, y, w, d) 只留一筆（三份方案裡相同的牆合成一筆；位置不同的兩道牆會並存，人自己刪）
+     同 (floor, x, y, w, d) 只留一筆（三份方案裡相同的牆合成一筆；位置不同的兩道牆會並存，人自己刪）；
+     id 直接由那組值組成（partition-1-275.6-100-10x275），不 hash、不會碰撞
   3. PUT /api/structure（現有 elements ＋ 新 partition，baseRev 現值）
   4. 成功後才逐份 PUT /api/plans/<id> 把 wall 設備移掉（baseRev 各自現值；409 就重 GET 重做一次）
 
@@ -18,7 +19,6 @@
   python3 scripts/walls_to_structure.py --apply --base http://localhost:8799
 """
 import argparse
-import hashlib
 import json
 import sys
 import urllib.error
@@ -34,11 +34,10 @@ def _num(v):
 
 
 def partition_id(floor, x, y, w, d):
-    """穩定的 id：同一組 (floor, x, y, w, d)（cm，取到 0.01）跑兩次得到同一個 id（重跑不會重複加）。
+    """穩定、可讀、無碰撞的 id：直接由 (floor, x, y, w, d) 組成，例如 partition-1-275.6-100-10x275。
     不做容差合併：位置差幾 cm 的兩道牆是兩道（正式站 275.6 vs 278.04 那對會並存，人自己刪一道）——
-    容差會把真的不同的牆（276 vs 284）合掉，那道牆就消失了。"""
-    key = f"{floor}:{_num(x)!r}:{_num(y)!r}:{_num(w)!r}:{_num(d)!r}"   # repr：1.001 與 1.004 是不同的 key
-    return "partition-" + hashlib.sha1(key.encode()).hexdigest()[:8]
+    容差會把真的不同的牆（276 vs 284）合掉，那道牆就消失了。不用 hash：截短的 hash 會碰撞、碰撞＝靜默掉一道牆。"""
+    return f"partition-{int(floor)}-{_num(x)!r}-{_num(y)!r}-{_num(w)!r}x{_num(d)!r}"
 
 
 def collect_partitions(plans):
@@ -50,11 +49,11 @@ def collect_partitions(plans):
                 continue
             floor = int(it.get("floor") or 1)
             x, y, w, d = _num(it.get("x")), _num(it.get("y")), _num(it.get("w")), _num(it.get("d"))
-            pid = partition_id(floor, x, y, w, d)
-            if pid in seen:
-                seen[pid]["_from"].append(p.get("name") or p.get("id"))
+            key = (floor, x, y, w, d)   # 去重用完整 tuple，不經過任何 hash
+            if key in seen:
+                seen[key]["_from"].append(p.get("name") or p.get("id"))
                 continue
-            seen[pid] = {"id": pid, "kind": "partition", "floor": floor, "name": "房間隔層",
+            seen[key] = {"id": partition_id(*key), "kind": "partition", "floor": floor, "name": "房間隔層",
                          "x": x, "y": y, "w": w, "d": d, "_from": [p.get("name") or p.get("id")]}
     return sorted(seen.values(), key=lambda e: (e["floor"], e["x"], e["y"]))
 

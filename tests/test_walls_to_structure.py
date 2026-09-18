@@ -28,6 +28,7 @@ def test_collect_dedupes_identical_walls_across_plans():
     assert shared["_from"] == ["洗手台工作台未定", "牆在正中間"], "相同的牆記得來自哪兩份"
     ids = [p["id"] for p in parts]
     assert len(set(ids)) == 5 and all(i.startswith("partition-") for i in ids)
+    assert shared["id"] == "partition-1-276-100-10x275", "id 可讀、由值組成、不 hash"
     # 同一道牆再跑一次得到同一個 id（重跑不會重複加）
     assert w2s.partition_id(1, 276, 100, 10, 275) == shared["id"]
     assert w2s.collect_partitions([]) == []
@@ -44,6 +45,10 @@ def test_collect_keeps_walls_that_differ_by_a_few_cm():
     # 小數第三位不同也是兩道（不做任何四捨五入）
     assert w2s.partition_id(1, 1.001, 100, 10, 275) != w2s.partition_id(1, 1.004, 100, 10, 275)
     assert w2s.partition_id(1, 276, 100, 10, 275) == w2s.partition_id(1, 276.0, 100.0, 10, 275), "276 與 276.0 是同一個值"
+    # 不同的 tuple 永遠是不同的 id（codex 抓到截短 hash 會碰撞：59762 與 91692）
+    assert w2s.partition_id(1, 59762, 100, 10, 275) != w2s.partition_id(1, 91692, 100, 10, 275)
+    big = {"id": "z", "name": "Z", "rev": 1, "plan": {"items": [WALL(59762, id=1), WALL(91692, id=2)]}}
+    assert len(w2s.collect_partitions([big])) == 2
 
 
 def test_strip_walls_keeps_everything_else():
