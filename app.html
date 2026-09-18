@@ -174,6 +174,7 @@
       <button class="structbtn" id="addBeam">＋ 梁</button>
       <button class="structbtn" id="addBath">＋ 廁所</button>
       <button class="structbtn" id="addPartition" title="房子的隔間，全部方案共用；厚 10 cm">＋ 房間隔層</button>
+      <label class="tgl itembtn" title="開著：點一件加一件、再點取消；桌機也可以 Shift+點"><input type="checkbox" id="multiToggle"> 多選</label>
       <button class="p itembtn" id="addDoor">＋ 門</button>
       <button class="itembtn" id="addObj">＋ 自訂物件</button>
       <button id="dup">⧉ 複製</button>
@@ -242,7 +243,7 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo } from './floors.js';
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany } from './floors.js';
 import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot } from './view.js';
 // MARGIN：畫布四周的空白；門口側（+x 之外）留 ENTRY_MARGIN，暫放時放得下最長的家具（DWG 那批 274）
 const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, ENTRY_MARGIN=300, PANEL_GAP=120;
@@ -303,7 +304,7 @@ let structMode=false, selEl=null, structDirty=null, structPushing=false, structP
 const mode=()=>structMode?'structure':'items';
 function setStructMode(on){ if(on&&!structLoaded){ $('#structMode').checked=false; toast('建築結構還在載入（或離線），先不能改結構'); return; }
   structMode=!!on; sel=null; selEl=null; mp=null;
-  $('#structMode').checked=structMode; document.body.classList.toggle('structon',structMode); panels.forEach(p=>p.classList.toggle('structmode',structMode)); render(); }
+  $('#structMode').checked=structMode; document.body.classList.toggle('structon',structMode); panels.forEach(p=>p.classList.toggle('structmode',structMode)); const mt=$('#multiToggle'); if(mt)mt.disabled=structMode; render(); }
 function elId(kind){ return kind+'-'+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
 function addElement(kind,w,d){ w=Math.min(PLAN_W,Math.max(5,w)); d=Math.min(PLAN_H,Math.max(5,d));
   const e={id:elId(kind),kind,floor:curFloor,name:KIND_LABEL[kind]||kind,x:Math.min(100,PLAN_W-w),y:Math.min(100,PLAN_H-d),w,d};
@@ -347,6 +348,11 @@ const DEFAULT=[
   {n:'餐具架',c:'shelf',w:30,d:60,x:280,y:225,h:165},
 ];
 let items=[], scale=1, sel=null, uid=1;
+// 多選（2026-09-18）：selSet 是選取集合、sel 是主選（最後點的那件、面板顯示的那件）。
+// 不變量由 render() 維持：sel==null → 集合清空；sel 不在集合裡（單選換人）→ 集合重設成只有 sel。
+let selSet=new Set();
+const multiOn=()=>{ const t=$('#multiToggle'); return !!(t&&t.checked&&!structMode); };
+const isSel=id=>selSet.has(id);
 const $=s=>document.querySelector(s), planwrap=$('#planwrap'), stage=$('#stage');
 const cssv=v=>getComputedStyle(document.documentElement).getPropertyValue(v)||'#888';
 
@@ -385,6 +391,7 @@ function renderProjection(){ panels.forEach((pn,f)=>{ [...pn.querySelectorAll('.
 function violations(){ const m=new Map(); shrineViolations(items,elements).forEach(v=>{ if(!m.has(v.shrineId))m.set(v.shrineId,[]); m.get(v.shrineId).push(v); }); return m; }
 function ruleText(v){ return v.rule==='beam'?'神明桌在 '+v.floor+'F 的「'+esc(v.name)+'」下方':v.rule==='bath'?'神明桌正上方 '+v.floor+'F 是「'+esc(v.name)+'」':v.floor+'F 的「'+esc(v.name)+'」正面沒有朝門口那側'; }
 function render(){
+  if(sel==null) selSet.clear(); else if(!selSet.has(sel)) selSet=new Set([sel]);   // 多選的不變量
   panels.forEach(pn=>[...pn.querySelectorAll('.it,.fx,.gap,.gapln,#measLayer,.measlb')].forEach(e=>e.remove()));
   const bad=violations();
   panels.forEach((pn,f)=>renderFloor(f,pn,bad));
@@ -405,7 +412,7 @@ function renderFloor(f,pn,bad){
     pn.appendChild(d); });
   onFloor(items,f).forEach(it=>{ if(it.hidden)return;
     const parked=isParked(it);
-    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' bad shrinebad':'')+(parked?' parked':'');
+    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(isSel(it.id)?' sel':'')+(bad.has(it.id)?' bad shrinebad':'')+(parked?' parked':'');
     const sr=toScreen(V(),it), pxW=sr.sw*scale, pxH=sr.sh*scale;   // 標籤照畫面上的框算字級
     if(it.door){ d.style.transform='rotate('+visualRot(V(),it.rot)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
@@ -488,21 +495,35 @@ function addGapLine(pn,x1,y1,x2,y2,v){ const s=toScreen(V(),{x:Math.min(x1,x2),y
 let drag=null;
 function startDrag(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget,id=+el.dataset.id,it=items.find(i=>i.id===id); if(!it)return;
   setFloorQuiet(floorOf(it));   // 四層並排：在哪個面板拖，那層就是目前樓層（不重畫，正在拖的元素要留著）
-  sel=id; panels.forEach(pn=>pn.querySelectorAll('.it.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
-  drag={it,el,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y};
+  let maybeDeselect=false;
+  if(multiOn()||e.shiftKey){   // 多選：點一件加一件；點已選的那件＝放開時沒移動就取消、有移動就是整群拖曳
+    if(selSet.has(id)){ maybeDeselect=true; sel=id; }
+    else { selSet.add(id); sel=id; el.classList.add('sel'); }
+  } else if(!(selSet.has(id)&&selSet.size>1)){   // 單選：換人就重設集合；點已選群組裡的一件則整群一起拖
+    sel=id; selSet=new Set([id]); panels.forEach(pn=>pn.querySelectorAll('.it.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
+  } else { sel=id; }
+  // 群組拖曳：其他被選的設備跟著同一個位移（各自夾在畫布內、不吸附）
+  const others=[...selSet].filter(x=>x!==id).map(x=>items.find(i=>i.id===x)).filter(Boolean).map(o=>({it:o,ox:o.x,oy:o.y,el:(panelOf(floorOf(o))||{querySelector(){return null;}}).querySelector('.it[data-id="'+o.id+'"]')}));
+  drag={it,el,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y,others,maybeDeselect,moved:false};
   try{el.setPointerCapture(e.pointerId);}catch(_){}
   el.addEventListener('pointermove',onDrag); el.addEventListener('pointerup',endDrag); el.addEventListener('pointercancel',endDrag);
   buildList(); updateSel(); e.preventDefault(); e.stopPropagation(); }
 function onDrag(e){ if(!drag)return; const it=drag.it;
+  if(Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)>3) drag.moved=true;   // 超過 3px 才算拖（點一下不算）
+  if(!drag.moved) return;
   const dm=fromScreenDelta(V(),(e.clientX-drag.sx)/scale,(e.clientY-drag.sy)/scale);   // 畫面位移 → 模型位移
   let nx=drag.ox+dm.dx, ny=drag.oy+dm.dy;
   if(it.door){ /* 門可超出圖面、不吸附 */ }
   else { [nx,ny]=clampPos(it,nx,ny); if($('#snap').checked)[nx,ny]=snapPos(it,nx,ny); }
   it.x=nx; it.y=ny; positionEl(drag.el,it);
+  const ddx=nx-drag.ox, ddy=ny-drag.oy;   // 被拖那件（夾＋吸附後）的實際位移，套到群組其他件
+  drag.others.forEach(o=>{ let [ox2,oy2]=[o.ox+ddx,o.oy+ddy]; if(!o.it.door)[ox2,oy2]=clampPos(o.it,ox2,oy2); o.it.x=ox2; o.it.y=oy2; if(o.el)positionEl(o.el,o.it); });
   drag.el.classList.toggle('bad',overlaps(it)); renderGaps(); renderMeasures(); updateSel(); }
-function endDrag(){ if(!drag)return; const el=drag.el;
+function endDrag(){ if(!drag)return; const el=drag.el, d=drag;
   el.removeEventListener('pointermove',onDrag); el.removeEventListener('pointerup',endDrag); el.removeEventListener('pointercancel',endDrag);
-  drag=null; save(); render(); }
+  drag=null;
+  if(d.maybeDeselect&&!d.moved){ selSet.delete(d.it.id); sel=selSet.size?[...selSet][selSet.size-1]:null; render(); return; }   // 多選：點已選的那件＝取消選取
+  if(d.moved) save(); render(); }
 
 // 結構元件的拖曳：不吸附（量出來的數字用面板打），只夾在圖框內
 let dragEl=null;
@@ -550,12 +571,16 @@ function updateSelEl(){ const s=elements.find(x=>x.id===selEl);
 function rotate(){ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
   const cx=it.x+it.w/2,cy=it.y+it.d/2; if(!it.door&&!it.win)[it.w,it.d]=[it.d,it.w]; it.rot=((it.rot||0)+90)%360;
   [it.x,it.y]=clampPos(it,cx-it.w/2,cy-it.d/2); save(); render(); }
-function dup(){ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
+function dup(){ if(structMode||sel==null)return;
+  if(selSet.size>1){ const made=cloneMany(items,[...selSet],curFloor,()=>uid++); items=items.concat(made); selSet=new Set(made.map(i=>i.id)); sel=made[made.length-1].id; save(); render(); return; }
+  const it=items.find(i=>i.id===sel); if(!it)return;
   const c=JSON.parse(JSON.stringify(it)); c.id=uid++; [c.x,c.y]=clampPos(c,it.x+30,it.y+30); items.push(c); sel=c.id; save(); render(); }
-function del(){ if(structMode){ delElement(); return; } if(sel==null)return; items=items.filter(i=>i.id!==sel); sel=null; save(); render(); }
+function del(){ if(structMode){ delElement(); return; } if(sel==null)return; const gone=selSet.size>1?selSet:new Set([sel]); items=items.filter(i=>!gone.has(i.id)); sel=null; save(); render(); }
+function hideSel(){ if(structMode||sel==null)return; const ids=selSet.size>1?selSet:new Set([sel]); items.forEach(i=>{ if(ids.has(i.id))i.hidden=true; }); sel=null; save(); render(); }
 
 function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.find(i=>i.id===sel);
-  if(!it){$('#selBody').innerHTML='點一個方塊來看尺寸／移動它';$('#selBody').style.color='var(--sub)';$('#selBtns').style.display='none';return;}
+  if(!it){$('#selBody').innerHTML='點一個方塊來看尺寸／移動它'+(multiOn()?'<br>多選開著：點一件加一件、再點取消':'');$('#selBody').style.color='var(--sub)';$('#selBtns').style.display='none';return;}
+  if(selSet.size>1){ updateSelMany(); return; }
   $('#selBody').style.color='var(--ink)';$('#selBtns').style.display='flex';
   if(it.door){ $('#selBody').innerHTML='<div class="kv"><b>門（四分之一圓）</b></div>'+
       '<div class="kv">門寬/半徑 <input id="dw" type="number" min="20" step="5" value="'+it.w+'"> cm</div>'+
@@ -588,6 +613,16 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
     if(k==='h'&&raw===''){ delete it.h; save(); render(); return; }   // 高度可空
     const v=Math.min(max,Math.max(min,Math.round(+raw||0))); it[k]=v; if(k!=='h')[it.x,it.y]=clampPos(it,it.x,it.y); save(); render(); }; };
   bindDim('iw','w',5,PLAN_W); bindDim('id','d',5,PLAN_H); bindDim('ih','h',0,10000); addItemFloorRow(it); }
+// 多選面板：已選 n 件；複製（同層各偏移 30）／複製到 nF／搬到 nF／刪除／隱藏。拖其中一件整群一起動（startDrag）。
+function updateSelMany(){ const n=selSet.size; $('#selBody').style.color='var(--ink)'; $('#selBtns').style.display='none';
+  const names=[...selSet].map(id=>items.find(i=>i.id===id)).filter(Boolean).map(i=>esc(i.door?'門':i.win?'窗':i.wall?'隔間牆':i.n)).join('、');
+  $('#selBody').innerHTML='<div class="kv"><b>已選 '+n+' 件</b></div><div class="kv" style="color:var(--sub)">'+names+'</div>'+
+    '<div class="kv"><select id="mcopy">'+floorOpts('複製到')+'</select> <select id="mmove">'+floorOpts('搬到')+'</select></div>'+
+    '<div class="rowbtn"><button id="mdup">⧉ 複製（同層）</button><button id="mhide">🙈 隱藏</button><button class="warn" id="mdel">🗑 刪除 '+n+' 件</button></div>'+
+    '<div class="kv" style="color:var(--sub)">拖其中一件，整群一起動；再點一件可取消選取</div>';
+  bindFloorSelect('mcopy',f=>{ const made=cloneMany(items,[...selSet],f,()=>uid++); items=items.concat(made); save(); setFloor(f); selSet=new Set(made.map(i=>i.id)); sel=made[made.length-1].id; render(); });
+  bindFloorSelect('mmove',f=>{ const ids=[...selSet]; items=moveMany(items,ids,f); save(); setFloor(f); selSet=new Set(ids); sel=ids[ids.length-1]; render(); });
+  const bd=$('#mdup'); if(bd)bd.onclick=dup; const bh=$('#mhide'); if(bh)bh.onclick=hideSel; const bx=$('#mdel'); if(bx)bx.onclick=del; }
 // 設備的「複製到 nF」「搬到 nF」：跨層同位置、同層偏移 30；做完切到目標層並選取那一件（門窗牆也適用）
 function addItemFloorRow(it){ const d=document.createElement('div'); d.className='kv'; d.innerHTML='<select id="icopy">'+floorOpts('複製到')+'</select> <select id="imove">'+floorOpts('搬到')+'</select>'; $('#selBody').appendChild(d);
   bindFloorSelect('icopy',f=>{ const c=cloneTo(it,f,uid++); items.push(c); save(); setFloor(f); sel=c.id; render(); });
@@ -598,7 +633,7 @@ function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.fil
   wrap.innerHTML='<h2>'+(listOpen?'▾':'▸')+' '+curFloor+'F 清單 '+here.length+' 件'+(nh?'（'+nh+'隱藏）':'')+(listOpen?' · 👁隱藏/顯示':'')+'</h2>';
   wrap.querySelector('h2').onclick=()=>{ listOpen=!listOpen; try{localStorage.setItem('drinkshop_list',listOpen?'open':'closed');}catch(e){} buildList(); };
   if(!listOpen) return;
-  here.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(it.win?['var(--cold)','var(--coldB)']:(CAT[it.c]||CAT.shelf)); const c=document.createElement('div'); c.className='chip'+(sel===it.id?' on':''); if(it.hidden)c.style.opacity='.45';
+  here.forEach(it=>{ const cc=it.wall?['var(--wall)','var(--wall)']:(it.win?['var(--cold)','var(--coldB)']:(CAT[it.c]||CAT.shelf)); const c=document.createElement('div'); c.className='chip'+(isSel(it.id)?' on':''); if(it.hidden)c.style.opacity='.45';
     c.innerHTML='<span class="sw" style="background:'+cc[0]+';border-color:'+cc[1]+'"></span><span>'+(it.door?'門 '+it.w:(it.win?'窗 '+it.w:esc(it.n)))+
       '</span><span style="margin-left:auto;color:var(--sub);font-family:var(--mono);font-size:11px">'+it.w+'×'+it.d+'</span>';
     const eye=document.createElement('button'); eye.className='eye'; eye.textContent=it.hidden?'🙈':'👁'; eye.title=it.hidden?'顯示':'隱藏';
@@ -686,14 +721,15 @@ $('#io').onclick=()=>{$('#ioText').value=JSON.stringify({items:items,measures:me
 $('#ioCopy').onclick=()=>{navigator.clipboard.writeText($('#ioText').value);$('#ioCopy').textContent='已複製';setTimeout(()=>$('#ioCopy').textContent='複製',1200);};
 $('#ioImport').onclick=()=>{try{const p=JSON.parse($('#ioText').value); items=Array.isArray(p)?p:(p.items||[]); measures=Array.isArray(p)?measures:(p.measures||[]); uid=Math.max(0,...items.map(i=>i.id||0),...measures.map(m=>m.id||0))+1; sel=null; save(); saveM(); render(); iod.close();}catch(e){alert('配置碼看不懂');}};
 $('#rot').onclick=rotate; $('#rot2').onclick=rotate; $('#dup').onclick=dup; $('#dup2').onclick=dup; $('#del').onclick=del; $('#del2').onclick=del;
-$('#hide2').onclick=()=>{ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(it){it.hidden=true;sel=null;save();render();} };
+$('#hide2').onclick=hideSel;
 $('#reset').onclick=()=>{ if(confirm('回到初始擺法？（會清掉這份方案目前的調整）')) reset(); };
 $('#zoom').oninput=fit; $('#gaps').onchange=renderGaps;
 $('#togglePanel').onclick=()=>{ const a=document.querySelector('.app'); a.classList.toggle('nopanel'); $('#togglePanel').textContent=a.classList.contains('nopanel')?'◧ 顯示側欄':'◧ 隱藏側欄'; setTimeout(fit,10); };
 // 「⋯ 更多」選單：按了裡面任何一顆就收起來
 $('#more').querySelector('.menu').addEventListener('click',e=>{ if(e.target.closest('button')) $('#more').open=false; });
 document.addEventListener('pointerdown',e=>{ const m=$('#more'); if(m.open&&!m.contains(e.target)) m.open=false; });
-document.addEventListener('keydown',e=>{ if(e.target.tagName==='INPUT')return; if(e.key==='r'||e.key==='R')rotate(); if(e.key==='d'||e.key==='D')dup(); if(e.key==='Delete'||e.key==='Backspace')del(); });
+document.addEventListener('keydown',e=>{ const t=e.target; if(t.tagName==='TEXTAREA'||t.tagName==='SELECT'||(t.tagName==='INPUT'&&!['checkbox','range'].includes(t.type)))return;   // 焦點在 checkbox（多選開關）上也要吃快捷鍵
+  if(e.key==='r'||e.key==='R')rotate(); if(e.key==='d'||e.key==='D')dup(); if(e.key==='Delete'||e.key==='Backspace')del(); });
 // 點面板空白／量測點擊的處理掛在每個面板上（buildPanels）；這裡只處理點到畫布空白（面板之外）
 planwrap.addEventListener('pointerdown',e=>{ if(e.target===planwrap){ sel=null; selEl=null; render(); } });
 // ===== 分享網址（改為直接複製本站網址）與匯出 =====
@@ -758,6 +794,7 @@ loadM();
 $('#orientToggle').checked=isV(); $('#allFloors').checked=view.all; $('#projToggle').checked=!view.all;
 $('#orientToggle').onchange=e=>setView({orient:e.target.checked?'v':'h'});
 $('#allFloors').onchange=e=>{ $('#projToggle').checked=!e.target.checked; setView({all:e.target.checked}); };
+$('#multiToggle').onchange=()=>{ updateSel(); };
 buildPanels();
 setFloor(curFloor);   // 同步 tab 樣式（上次看的樓層記在這台瀏覽器）
 
