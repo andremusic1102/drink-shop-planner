@@ -28,6 +28,12 @@ after  rev 337 {"n": "外場冰箱", "c": "cold", "w": 75, "d": 78, "x": 989.530
 
 線上靜態檔：`curl https://drinkshop-new.andremusic.dev/` 含 `id="orientToggle"`／`id="allFloors"`／`id="more"`；`/view.js` 是 D1 的檔。
 
+## 第二次 deploy（seal 修正）
+
+seal 指出 `isParked` 該定義在 `floors.js`（原本在 rules.js、floors.js 只 re-export）。搬家後（`941869c`）
+再 deploy 一次：Version ID `2bec65bb-ddda-4c55-9a56-7acd37888f63`；`curl https://drinkshop-new.andremusic.dev/floors.js`
+含 `export function isParked`。判準與行為沒變（56/56 測試同一組）。
+
 ## 沒驗的
 
 - 手機（<720px）初始單層：只在桌機 viewport（1400×900）跑過；邏輯是 `window.innerWidth>=720`。
