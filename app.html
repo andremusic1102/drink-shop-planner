@@ -57,6 +57,8 @@
   .fx{position:absolute;pointer-events:none;display:flex;align-items:center;justify-content:center;text-align:center;z-index:1;
     font-size:11px;color:var(--sub);font-family:var(--mono);border:1px dashed var(--shellB);background:var(--shell);border-radius:2px}
   .fx.stairs{background:repeating-linear-gradient(90deg,var(--shell),var(--shell) 5px,var(--shellB) 5px,var(--shellB) 5.6px)}
+  .fx.partition{background:var(--wall);border:1px solid var(--wall);color:var(--card);z-index:4}   /* 房間隔層：深色實心，跟舊的隔間牆設備同色 */
+  .plan.structmode .fx.stairs{cursor:default;outline-style:dotted}   /* 樓梯固定不可拖 */
   .it{position:absolute;border:1.5px solid var(--counterB);background:var(--counter);border-radius:3px;cursor:grab;z-index:10;
     display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;
     touch-action:none;user-select:none;padding:1px;line-height:1.05}
@@ -171,9 +173,8 @@
       <label class="tgl" title="開著只能動梁／樓梯／廁所／玄關，設備鎖住；關著反過來"><input type="checkbox" id="structMode"> 🏗 編輯結構</label>
       <button class="structbtn" id="addBeam">＋ 梁</button>
       <button class="structbtn" id="addBath">＋ 廁所</button>
-      <button class="structbtn" id="addStairs">＋ 樓梯</button>
+      <button class="structbtn" id="addPartition" title="房子的隔間，全部方案共用；厚 10 cm">＋ 房間隔層</button>
       <button class="p itembtn" id="addDoor">＋ 門</button>
-      <button class="itembtn" id="addWall">＋ 隔間牆</button>
       <button class="itembtn" id="addObj">＋ 自訂物件</button>
       <button id="dup">⧉ 複製</button>
       <button id="rot">⟳ 旋轉90°</button>
@@ -241,7 +242,7 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked } from './floors.js';
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo } from './floors.js';
 import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot } from './view.js';
 // MARGIN：畫布四周的空白；門口側（+x 之外）留 ENTRY_MARGIN，暫放時放得下最長的家具（DWG 那批 274）
 const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, ENTRY_MARGIN=300, PANEL_GAP=120;
@@ -516,16 +517,23 @@ function onDragEl(e){ if(!dragEl)return; const s=dragEl.s;
 function endDragEl(){ if(!dragEl)return; const el=dragEl.el;
   el.removeEventListener('pointermove',onDragEl); el.removeEventListener('pointerup',endDragEl); el.removeEventListener('pointercancel',endDragEl);
   dragEl=null; saveStructure(); render(); }
+// 「複製到 nF」「搬到 nF」下拉（結構元件與設備共用）：第一個選項是提示，選了樓層才動作，動作後 select 回到提示
+function floorOpts(label){ return '<option value="">'+label+'…</option>'+FLOORS.map(f=>'<option value="'+f+'">'+f+'F</option>').join(''); }
+function bindFloorSelect(id,fn){ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const f=+el.value; el.value=''; if(FLOORS.includes(f)) fn(f); }; }
 function updateSelEl(){ const s=elements.find(x=>x.id===selEl);
-  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／樓梯／廁所／玄關來移動或改尺寸；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
+  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／廁所／房間隔層／玄關來移動或改尺寸；樓梯固定不可拖；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
   $('#selBody').style.color='var(--ink)'; $('#selBtns').style.display='none';
   const num=(id,v)=>'<input id="'+id+'" type="number" step="1" value="'+Math.round(v)+'" style="width:64px">';
-  $('#selBody').innerHTML='<div class="kv"><b>'+esc(KIND_LABEL[s.kind]||s.kind)+'</b> · '+curFloor+'F</div>'+
+  $('#selBody').innerHTML='<div class="kv"><b>'+esc(KIND_LABEL[s.kind]||s.kind)+'</b> · '+floorOf(s)+'F'+(s.kind==='stairs'?' · <span style="color:var(--sub)">樓梯固定，不可拖</span>':'')+'</div>'+
     '<div class="kv">名稱 <input id="en" value="'+esc(s.name||'')+'" style="width:150px"></div>'+
     '<div class="kv">X '+num('ex',s.x)+' Y '+num('ey',s.y)+'</div>'+
     '<div class="kv">長 '+num('ew',s.w)+' 寬 '+num('ed',s.d)+' cm</div>'+
+    '<div class="kv"><select id="ecopy">'+floorOpts('複製到')+'</select> <select id="emove">'+floorOpts('搬到')+'</select></div>'+
     '<div class="rowbtn"><button class="warn" id="edel">刪除這個結構元件</button></div>'+
     '<div class="kv" style="color:var(--sub)">全部方案共用；改完自動存</div>';
+  // 複製到：同層偏移 30、跨層同位置；搬到：只換樓層。做完切到目標層並選取那一件
+  bindFloorSelect('ecopy',f=>{ const c=cloneTo(s,f,elId(s.kind)); elements=elements.concat([c]); saveStructure(); setFloor(f); selEl=c.id; render(); });
+  bindFloorSelect('emove',f=>{ const m=moveTo(s,f); elements=elements.map(x=>x.id===s.id?m:x); saveStructure(); setFloor(f); selEl=m.id; render(); });
   // 尺寸不能超過圖框（不然位置夾限會算出負範圍、拖不動）
   const bind=(id,k,min,max)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const v=k==='name'?el.value.trim():Math.min(max,Math.max(min,+el.value||0)); s[k]=v;
     if(k!=='name'){ s.x=Math.max(0,Math.min(PLAN_W-s.w,s.x)); s.y=Math.max(0,Math.min(PLAN_H-s.d,s.y)); } saveStructure(); render(); }; };
@@ -547,15 +555,15 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
       '<div class="rowbtn"><button id="dflip">翻面(換開向)</button></div>'+
       '<div class="kv" style="color:var(--sub)">⟳旋轉換牆邊·可拖到圖外(外開)</div>';
     const dw=$('#dw'); if(dw)dw.onchange=()=>{const v=Math.max(20,+dw.value||100); it.w=it.d=v; save(); render();};
-    const df=$('#dflip'); if(df)df.onclick=()=>{it.flip=!it.flip; save(); render();}; return; }
+    const df=$('#dflip'); if(df)df.onclick=()=>{it.flip=!it.flip; save(); render();}; addItemFloorRow(it); return; }
   if(it.win){ $('#selBody').innerHTML='<div class="kv"><b>窗戶</b></div>'+
       '<div class="kv">窗寬 <input id="ww" type="number" min="20" step="5" value="'+it.w+'"> · 厚 <input id="wt2" type="number" min="4" step="1" value="'+it.d+'"> cm</div>'+
       '<div class="kv" style="color:var(--sub)">⟳旋轉貼直牆·拖到牆邊會吸附</div>';
-    const ww=$('#ww'),wt2=$('#wt2'); if(ww)ww.onchange=()=>{it.w=Math.max(20,+ww.value||120);save();render();}; if(wt2)wt2.onchange=()=>{it.d=Math.max(4,+wt2.value||16);save();render();}; return; }
+    const ww=$('#ww'),wt2=$('#wt2'); if(ww)ww.onchange=()=>{it.w=Math.max(20,+ww.value||120);save();render();}; if(wt2)wt2.onchange=()=>{it.d=Math.max(4,+wt2.value||16);save();render();}; addItemFloorRow(it); return; }
   if(it.wall){ $('#selBody').innerHTML='<div class="kv"><b>隔間牆</b></div>'+
       '<div class="kv">長 <input id="wl" type="number" min="10" step="5" value="'+it.w+'"> · 厚 <input id="wt" type="number" min="4" step="1" value="'+it.d+'"> cm</div>'+
       '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>';
-    const wl=$('#wl'),wt=$('#wt'); if(wl)wl.onchange=()=>{it.w=Math.max(10,+wl.value||10);save();render();}; if(wt)wt.onchange=()=>{it.d=Math.max(4,+wt.value||10);save();render();}; return; }
+    const wl=$('#wl'),wt=$('#wt'); if(wl)wl.onchange=()=>{it.w=Math.max(10,+wl.value||10);save();render();}; if(wt)wt.onchange=()=>{it.d=Math.max(4,+wt.value||10);save();render();}; addItemFloorRow(it); return; }
   // 一般設備：名稱與長／寬／高可改（匯入的家具靠這裡修尺寸）；位置只能拖，不開 X／Y
   const rv=v=>(v==null||v===''?'':Math.round(v));
   $('#selBody').innerHTML='<div class="kv"><input id="iname" value="'+esc(it.n)+'" style="width:170px;font-weight:700"></div>'+
@@ -572,7 +580,11 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
   const bindDim=(id,k,min,max)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const raw=el.value.trim();
     if(k==='h'&&raw===''){ delete it.h; save(); render(); return; }   // 高度可空
     const v=Math.min(max,Math.max(min,Math.round(+raw||0))); it[k]=v; if(k!=='h')[it.x,it.y]=clampPos(it,it.x,it.y); save(); render(); }; };
-  bindDim('iw','w',5,PLAN_W); bindDim('id','d',5,PLAN_H); bindDim('ih','h',0,10000); }
+  bindDim('iw','w',5,PLAN_W); bindDim('id','d',5,PLAN_H); bindDim('ih','h',0,10000); addItemFloorRow(it); }
+// 設備的「複製到 nF」「搬到 nF」：跨層同位置、同層偏移 30；做完切到目標層並選取那一件（門窗牆也適用）
+function addItemFloorRow(it){ const d=document.createElement('div'); d.className='kv'; d.innerHTML='<select id="icopy">'+floorOpts('複製到')+'</select> <select id="imove">'+floorOpts('搬到')+'</select>'; $('#selBody').appendChild(d);
+  bindFloorSelect('icopy',f=>{ const c=cloneTo(it,f,uid++); items.push(c); save(); setFloor(f); sel=c.id; render(); });
+  bindFloorSelect('imove',f=>{ const m=moveTo(it,f); items=items.map(x=>x.id===it.id?m:x); save(); setFloor(f); sel=m.id; render(); }); }
 // 清單預設收合（要隱藏特定東西再打開）；開合狀態記在這台瀏覽器
 let listOpen=false; try{ listOpen=localStorage.getItem('drinkshop_list')==='open'; }catch(e){}
 function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.filter(i=>i.hidden).length; wrap.classList.toggle('closed',!listOpen);
@@ -590,15 +602,15 @@ function buildList(){ const wrap=$('#list'); const here=cur(); const nh=here.fil
 
 $('#addDoor').onclick=()=>{ const w=Math.max(20,+prompt('門寬(cm)＝開門半徑：','100')||100);
   items.push({id:uid++,n:'門',c:'seal',w:w,d:w,x:40,y:40,h:0,rot:0,door:true,flip:false,floor:curFloor}); sel=uid-1; save(); render(); };
-$('#addWall').onclick=()=>{ const L=Math.max(20,+prompt('隔間牆長度(cm)：','200')||200);
-  items.push({id:uid++,n:'隔間牆',c:'wall',w:L,d:10,x:80,y:80,h:0,rot:0,wall:true,floor:curFloor}); sel=uid-1; save(); render(); };
-// 「＋ 窗戶」2026-09-17 拿掉（不需要）；舊方案裡已有的窗戶照常顯示、可選可刪，只是不能再新增
+// 「＋ 窗戶」「＋ 隔間牆」2026-09-17 拿掉：窗戶不需要；隔間牆改成結構層的「＋ 房間隔層」（全部方案共用）。
+// 舊方案裡已有的窗戶／隔間牆設備照常顯示、可選可刪，只是不能再新增。
 $('#floorTabs').onclick=(e)=>{ const b=e.target.closest('button'); if(b&&b.dataset.floor) setFloor(+b.dataset.floor); };
 $('#projToggle').onchange=renderProjection;
 $('#structMode').onchange=(e)=>setStructMode(e.target.checked);
 $('#addBeam').onclick=()=>{ const w=Math.max(10,+prompt('梁寬(cm)：','30')||30); addElement('beam',PLAN_W,w); };
 $('#addBath').onclick=()=>addElement('bath',140,200);
-$('#addStairs').onclick=()=>addElement('stairs',267,100);
+// 「＋ 樓梯」2026-09-17 拿掉：樓梯不會動了（結構模式也不可拖，見 draggableSet）；面板仍可打數字、刪、複製到別層
+$('#addPartition').onclick=()=>{ const L=Math.max(20,+prompt('房間隔層長度(cm)：','200')||200); addElement('partition',L,10); };
 function flip(){ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return; it.flip=!it.flip; save(); render(); }
 $('#flip').onclick=flip;
 
