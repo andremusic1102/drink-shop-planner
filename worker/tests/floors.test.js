@@ -92,3 +92,11 @@ test("isParked：完全在框外才算，壓線不算", () => {
   const parkedShrine = { id: 9, c: "shrine", floor: 1, x: 1400, y: 0, w: 67, d: 133 };
   assert.deepEqual(projection([], [parkedShrine], 2), []);
 });
+
+test("門窗在框外不算暫放", () => {
+  assert.equal(isParked({ door: true, x: 1400, y: 100, w: 90, d: 90 }), false, "框外的門是外開門，不是暫放");
+  assert.equal(isParked({ win: true, x: -100, y: 0, w: 120, d: 16 }), false, "壓後牆線的窗不是暫放");
+  assert.equal(isParked({ win: true, x: -200, y: 0, w: 120, d: 16 }), false, "完全在框外的窗也不是暫放");
+  assert.equal(isParked({ x: 1400, y: 100, w: 90, d: 90 }), true, "同座標的一般設備才算暫放");
+  assert.equal(isParked({ x: -200, y: 0, w: 120, d: 16 }), true, "同座標的一般設備才算暫放");
+});

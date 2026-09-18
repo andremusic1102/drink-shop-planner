@@ -11,9 +11,11 @@ export { floorOf };
  * 暫放（CONTEXT.md）：設備被拖到房子的框外。矩形跟 0..1300×0..375 **完全不相交**才算；
  * 壓線（一半在框內）不算、照常檢查。不加欄位——位置就是狀態，拖回框內就恢復。
  * 暫放的不算重疊／間距／神明桌規則、不投影、不匯出、不進縮圖，但仍屬原樓層、仍在清單裡。
+ * 門（door）與窗（win）一律不算暫放：它們本來就可以放在框外（外開門），照常匯出與進縮圖。
  */
 export function isParked(it) {
   if (!it) return false;
+  if (it.door || it.win) return false;
   const r = { x: Number(it.x) || 0, y: Number(it.y) || 0, w: Number(it.w) || 0, d: Number(it.d) || 0 };
   return !intersects(r, FRAME);
 }

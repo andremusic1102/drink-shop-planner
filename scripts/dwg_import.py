@@ -13,8 +13,11 @@ x 從內框左緣起算（0–123，右緣是樓梯側），y 用 DXF 原值（�
 
 用法：
   python3 scripts/dwg_import.py                 # dry-run：印出要寫的結構與方案 JSON
-  python3 scripts/dwg_import.py --apply         # PUT /api/structure + POST /api/plans
-  python3 scripts/dwg_import.py --apply --base https://drinkshop-new.andremusic.dev
+  python3 scripts/dwg_import.py --apply --replace-1f   # PUT /api/structure + POST /api/plans
+  python3 scripts/dwg_import.py --apply --replace-1f --base https://drinkshop-new.andremusic.dev
+
+--apply 沒帶 --replace-1f 會直接退出：它會把伺服器現有的 1F 結構（實測梁／廁所）整份換掉。
+保留 1F 的 --keep-1f 還沒做，見 plans/bath.md D1。
 """
 import argparse
 import json
@@ -156,10 +159,15 @@ def http(method, path, body=None, base=BASE):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="真的寫到伺服器（預設只印）")
+    ap.add_argument("--replace-1f", action="store_true",
+                    help="覆寫伺服器現有的 1F 結構；未來 --keep-1f 做出來前 --apply 必須明確帶這個")
     ap.add_argument("--base", default=BASE)
     ap.add_argument("--source", default=SOURCE_PLAN_ID, help="1F 設備要複製的方案 id")
     ap.add_argument("--name", default=NEW_PLAN_NAME)
     a = ap.parse_args()
+
+    if a.apply and not a.replace_1f:
+        sys.exit("--apply 會覆寫正式站現有的 1F 結構（實測梁／廁所），要覆寫請明確加 --replace-1f；保留 1F 的 --keep-1f 見 plans/bath.md D1")
 
     st, cur = http("GET", "/api/structure", base=a.base)
     if st != 200:
