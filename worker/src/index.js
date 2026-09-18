@@ -169,7 +169,7 @@ async function handleApi(request, env, url) {
     return json({ id, rev: 1 });
   }
 
-  const m = path.match(/^\/api\/plans\/([a-f0-9]+)(\/history|\/thumb\.svg|\/restore)?$/);
+  const m = path.match(/^\/api\/plans\/([a-f0-9]+)(\/history|\/thumb\.svg|\/restore|\/fork)?$/);
   if (!m) return json({ error: "not found" }, 404);
 
   const id = m[1];
@@ -272,6 +272,28 @@ async function handleApi(request, env, url) {
     const newRev = row.rev + 1;
     await writeRevision(db, id, newRev, ts, bak.plan);
     return json({ ok: true, rev: newRev });
+  }
+
+  // POST /api/plans/{id}/fork {rev, name?} —— 把某一版複製成新方案（2026-09-18）。
+  // 原方案與它的版本紀錄完全不動；新方案從 rev 1 起算、內容是那一版的原文。
+  if (method === "POST" && sub === "/fork") {
+    const body = await readBody(request);
+    const want = body.rev;
+    const row = await getPlan(db, id);
+    if (!row) return json({ error: "not found" }, 404);
+    const bak = await db.prepare(
+      "SELECT plan FROM revisions WHERE plan_id = ? AND rev = ?"
+    ).bind(id, want).first();
+    if (!bak) return json({ error: "no such version" }, 404);
+
+    const name = String(body.name || `${row.name} · 版本 ${want}`).trim().slice(0, 80);
+    const newId = hexId();
+    const ts = now();
+    await db.prepare(
+      "INSERT INTO plans (id, name, rev, ts, plan) VALUES (?, ?, 1, ?, ?)"
+    ).bind(newId, name, ts, bak.plan).run();
+    await writeRevision(db, newId, 1, ts, bak.plan);
+    return json({ id: newId, rev: 1 });
   }
 
   return json({ error: "not found" }, 404);
