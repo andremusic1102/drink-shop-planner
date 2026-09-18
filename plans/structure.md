@@ -1,3 +1,7 @@
+---
+contract_commit: "2b80715d6eba2a6173bbb2e8b05767e6147ffa7d"
+---
+
 # 結構第二輪：房間隔層、樓梯鎖定、跨層複製／搬層、投影縮減、匯入 2–4F — 計畫
 
 2026-09-17 定案（取代同日的 plans/bath.md）。術語見 `CONTEXT.md`。
