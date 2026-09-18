@@ -7,7 +7,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
-import dwg_import  # noqa: E402
+import dwg_import
 
 APP_W, APP_D = 1300, 375
 SOURCE_ITEM = {"id": 4, "n": "工作台", "c": "counter", "w": 78, "d": 196, "x": 1222, "y": 163, "h": 123, "rot": 0, "door": False}
@@ -85,3 +85,42 @@ def test_build_items_walls_and_doors_shape():
     assert len(doors) == 8
     assert [i["c"] for i in walls] == ["wall"] * 20
     assert [i["w"] == i["d"] for i in doors] == [True] * 8
+
+
+# ---- apply()：順序與半套用 ------------------------------------------------------
+# 共用結構是所有方案一起吃的，所以一定要「先建新方案（純新增）、成功才覆寫結構」。
+# 用假的 http_fn 記下呼叫順序與實際送出的 body，不打網路。
+
+def _fake_http(fail_on=None, put_status=200):
+    calls = []
+
+    def http_fn(method, path, body=None, base=""):
+        calls.append((method, path, body))
+        if method == "POST":
+            return (500, {"error": "boom"}) if fail_on == "POST" else (200, {"id": "abc123", "rev": 1})
+        return (put_status, {"ok": False, "rev": 99} if put_status != 200 else {"ok": True, "rev": 16})
+    return http_fn, calls
+
+
+def test_apply_posts_plan_before_putting_structure():
+    http_fn, calls = _fake_http()
+    ok = dwg_import.apply("http://x", "新方案", {"items": [], "measures": []}, [dwg_import.ENTRY], 15, http_fn=http_fn)
+    assert ok is True
+    assert [(m, p) for m, p, _ in calls] == [("POST", "/api/plans"), ("PUT", "/api/structure")]
+    # 實際送出的 body：方案名稱與 baseRev 要原樣進去
+    assert calls[0][2] == {"name": "新方案", "plan": {"items": [], "measures": []}}
+    assert calls[1][2] == {"structure": {"elements": [dwg_import.ENTRY]}, "baseRev": 15}
+
+
+def test_apply_plan_failure_leaves_structure_untouched():
+    http_fn, calls = _fake_http(fail_on="POST")
+    ok = dwg_import.apply("http://x", "新方案", {"items": []}, [dwg_import.ENTRY], 15, http_fn=http_fn)
+    assert ok is False
+    assert [m for m, _, _ in calls] == ["POST"]
+
+
+def test_apply_structure_409_reports_false_but_plan_already_created():
+    http_fn, calls = _fake_http(put_status=409)
+    ok = dwg_import.apply("http://x", "新方案", {"items": []}, [dwg_import.ENTRY], 15, http_fn=http_fn)
+    assert ok is False
+    assert [m for m, _, _ in calls] == ["POST", "PUT"]
