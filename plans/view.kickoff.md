@@ -36,6 +36,10 @@ generated: 2026-09-17T21:25:00
   U16: D6 暫放（isParked 進 floors.js、clampPos 夾 planwrap、門口側留 300、規則／匯出／縮圖跳過、三個具名測試）
   U17: D4 上線＋readback（build → miniflare 驗舊方案 → deploy → drinkshop-new 驗 → docs/d7-readback.md）
 
+狀態 2026-09-17 22:10：U12–U17 全部 passed、上線三次（最後 HEAD ca4a795、Version 023203ba）、
+seal 6/6 met @ 第 2 次凍結 f8c37ab（兩次 reconfirm：D2 面板排列文字對齊定案表、D4 允許 seal 修正後重 deploy）。
+補開的 U18 no-diff、U19 passed。剩 /goal（最後一段）。
+
 全部關完 → python3 ~/github/claude-config/scripts/contract.py seal plans/view.md
 卡住需要人決定時：AskUserQuestion 硬停等 Andre，不自作主張。
 
