@@ -39,12 +39,14 @@ export function elementsOn(elements, floor) {
  * 每筆 {src:'element'|'shrine', floor, kind, name, x, y, w, d, ref}，ref 指回原物件。
  * 隱藏的神明桌不投影。
  */
+// 投影只畫這幾種結構元件（2026-09-17 定案：廁所／玄關／房間隔層疊上來太吵，神明桌規則不靠投影）
+export const PROJECTED_KINDS = ["beam", "stairs"];
 export function projection(elements, items, floor) {
   const f = Number(floor) || 1;
   const out = [];
   for (const e of Array.isArray(elements) ? elements : []) {
     const ef = floorOf(e);
-    if (ef === f) continue;
+    if (ef === f || !PROJECTED_KINDS.includes(e.kind)) continue;
     out.push({ src: "element", floor: ef, kind: e.kind, name: e.name || e.kind, x: e.x, y: e.y, w: e.w, d: e.d, ref: e });
   }
   for (const it of Array.isArray(items) ? items : []) {
@@ -61,7 +63,29 @@ export function projection(elements, items, floor) {
  * 關著只有當層的設備能動——兩種東西永遠不會同時可拖（2026-09-17 定案：避免排設備時誤碰梁）。
  */
 export function draggableSet(mode, items, elements, floor) {
-  return mode === "structure" ? elementsOn(elements, floor) : cur(items, floor);
+  // 樓梯固定不動（2026-09-17 定案）：結構模式下也不可拖；面板仍可打數字、可刪、可複製到別層
+  return mode === "structure" ? elementsOn(elements, floor).filter((e) => e.kind !== "stairs") : cur(items, floor);
+}
+
+/**
+ * 複製到某一層（結構元件與設備通用）：新 id、floor 改；同層時偏移 30 cm 並夾在框內，跨層時 x/y 原樣。
+ * 其他欄位（name／n／kind／c／w／d／h／rot／door…）照抄。回傳新物件，不動原物件。
+ */
+export function cloneTo(obj, toFloor, newId) {
+  const to = Number(toFloor) || 1;
+  const c = JSON.parse(JSON.stringify(obj));
+  c.id = newId; c.floor = to;
+  if (floorOf(obj) === to) {
+    const w = Number(c.w) || 0, d = Number(c.d) || 0;
+    c.x = Math.max(0, Math.min(1300 - w, (Number(c.x) || 0) + 30));
+    c.y = Math.max(0, Math.min(375 - d, (Number(c.y) || 0) + 30));
+  }
+  return c;
+}
+
+/** 搬到某一層：只改 floor，id 與座標不變。回傳新物件，不動原物件。 */
+export function moveTo(obj, toFloor) {
+  return { ...obj, floor: Number(toFloor) || 1 };
 }
 
 /** 結構元件種類的中文名（畫標籤用）。 */
