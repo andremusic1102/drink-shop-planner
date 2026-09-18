@@ -4,8 +4,8 @@
 // 詞彙見 CONTEXT.md：設備（item，屬於某層）、結構元件（element，梁／樓梯／廁所／玄關）、
 // 投影（把別層的東西畫到目前樓層上）。四層同框 1300×375、同一座標系。
 
-import { floorOf } from "./rules.js";
-export { floorOf };
+import { floorOf, isParked } from "./rules.js";
+export { floorOf, isParked };
 
 export const FLOORS = [1, 2, 3, 4];
 
@@ -35,7 +35,7 @@ export function projection(elements, items, floor) {
     out.push({ src: "element", floor: ef, kind: e.kind, name: e.name || e.kind, x: e.x, y: e.y, w: e.w, d: e.d, ref: e });
   }
   for (const it of Array.isArray(items) ? items : []) {
-    if (it.c !== "shrine" || it.hidden) continue;
+    if (it.c !== "shrine" || it.hidden || isParked(it)) continue;   // 暫放的神明桌不投影
     const itf = floorOf(it);
     if (itf >= f) continue;
     out.push({ src: "shrine", floor: itf, kind: "shrine", name: it.n || "神明桌", x: it.x, y: it.y, w: it.w, d: it.d, ref: it });

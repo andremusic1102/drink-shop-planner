@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { cur, elementsOn, projection, draggableSet, FLOORS } from "../src/floors.js";
+import { cur, elementsOn, projection, draggableSet, FLOORS, isParked } from "../src/floors.js";
 
 const items = [
   { id: 1, n: "冰箱", c: "cold", x: 10, y: 10, w: 60, d: 60 },                 // floor 缺 → 1F
@@ -74,4 +74,21 @@ test("結構模式關著：可拖集合只含設備", () => {
 
 test("FLOORS 是 1–4", () => {
   assert.deepEqual(FLOORS, [1, 2, 3, 4]);
+});
+
+test("isParked：完全在框外才算，壓線不算", () => {
+  const box = (x, y, w = 60, d = 40) => ({ x, y, w, d });
+  assert.equal(isParked(box(1300, 100)), true, "貼著門口側外緣、完全在外");
+  assert.equal(isParked(box(-60, 100)), true, "後牆外");
+  assert.equal(isParked(box(100, 375)), true, "對面牆外");
+  assert.equal(isParked(box(100, -40)), true, "樓梯側外");
+  assert.equal(isParked(box(1500, 500)), true, "四層並排時面板空隙的位置也算暫放");
+  assert.equal(isParked(box(1270, 100)), false, "壓線：一半在框內，照常檢查");
+  assert.equal(isParked(box(-30, 100)), false, "壓後牆線");
+  assert.equal(isParked(box(100, 100)), false, "框內");
+  assert.equal(isParked(box(1240, 335)), false, "剛好貼著框內角落");
+  assert.equal(isParked(null), false);
+  // 投影：暫放的神明桌不投到別層
+  const parkedShrine = { id: 9, c: "shrine", floor: 1, x: 1400, y: 0, w: 67, d: 133 };
+  assert.deepEqual(projection([], [parkedShrine], 2), []);
 });

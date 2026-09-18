@@ -137,6 +137,9 @@
   .proj.bad{border-color:var(--sel);color:var(--sel);opacity:.9;border-width:2.5px}
   .fx.bad{box-shadow:inset 0 0 0 3px var(--sel)}
   .it.shrinebad{box-shadow:0 0 0 3px var(--sel), 0 0 12px var(--sel)}
+  /* 暫放（完全在框外）：半透明＋角標；還是那一層的設備、拖回框內就恢復 */
+  .it.parked{opacity:.55;border-style:dashed}
+  .it .ptag{position:absolute;top:-1px;left:-1px;font-size:9px;line-height:1.2;padding:0 3px;background:var(--sub);color:var(--card);border-radius:3px 0 3px 0;font-family:var(--mono);font-weight:700}
   .structbtn{display:none}.structon .structbtn{display:inline-flex}.structon .itembtn{display:none}
   #__toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--wall);color:var(--card);padding:9px 14px;border-radius:8px;font-size:13px;z-index:2000;box-shadow:0 4px 14px rgba(0,0,0,.25);max-width:90%;opacity:0;transition:opacity .4s;pointer-events:none}
 </style>
@@ -238,9 +241,10 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf } from './floors.js';
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked } from './floors.js';
 import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot } from './view.js';
-const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, PANEL_GAP=120;
+// MARGIN：畫布四周的空白；門口側（+x 之外）留 ENTRY_MARGIN，暫放時放得下最長的家具（DWG 那批 274）
+const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, ENTRY_MARGIN=300, PANEL_GAP=120;
 const CAT={counter:['var(--counter)','var(--counterB)'],cold:['var(--cold)','var(--coldB)'],water:['var(--water)','var(--waterB)'],
   heat:['var(--heat)','var(--heatB)'],seal:['var(--seal)','var(--sealB)'],shrine:['var(--shrine)','var(--shrineB)'],shelf:['var(--shelf)','var(--shelfB)']};
 // 建築結構（梁／樓梯／廁所／玄關）：一棟房子一份，全部方案共用，從 /api/structure 讀。
@@ -350,16 +354,17 @@ function save(){ localStorage.setItem('drinkshop_v1',JSON.stringify(items)); if(
 
 // 畫布排版（cm）：直向面板左到右、橫向面板上到下；四層之間留 PANEL_GAP、外圍留 MARGIN。
 function layoutCm(){ const ps=panelSize(V()), n=viewFloors().length, gap=n>1?PANEL_GAP:0;
-  const across=isV();   // 直向：面板沿 x 排；橫向：沿 y 疊
+  const across=isV();   // 直向：面板沿 x 排、門口側在下；橫向：沿 y 疊、門口側在右
   const W=across?n*ps.w+(n-1)*gap:ps.w, H=across?ps.h:n*ps.h+(n-1)*gap;
-  return {ps,n,gap,across,W:W+2*MARGIN,H:H+2*MARGIN}; }
+  const at=i=>({ox:MARGIN+(across?i*(ps.w+gap):0), oy:MARGIN+(across?0:i*(ps.h+gap))});   // 第 i 個面板的左上（cm）
+  return {ps,n,gap,across,at,W:W+MARGIN+(across?MARGIN:ENTRY_MARGIN),H:H+MARGIN+(across?ENTRY_MARGIN:MARGIN)}; }
 function fit(){ const zoom=parseFloat($('#zoom').value), L=layoutCm();
   const availW=stage.clientWidth-32, availH=stage.clientHeight-32;
   // 橫向單層維持原本的「寬度貼合」；其他檢視整張塞進視窗（太小用 zoom 拉）
   scale=(!isV()&&L.n===1)?(availW/PLAN_W)*zoom:Math.max(0.05,Math.min(availW/L.W,availH/L.H))*zoom;
   planwrap.style.width=(L.W*scale)+'px'; planwrap.style.height=(L.H*scale)+'px';
   viewFloors().forEach((f,i)=>{ const p=panelOf(f); if(!p)return;
-    const left=MARGIN+(L.across?i*(L.ps.w+L.gap):0), top=MARGIN+(L.across?0:i*(L.ps.h+L.gap));
+    const {ox:left,oy:top}=L.at(i);
     p.style.left=(left*scale)+'px'; p.style.top=(top*scale)+'px'; p.style.width=(L.ps.w*scale)+'px'; p.style.height=(L.ps.h*scale)+'px';
     const g=p.querySelector('.grid'); if(g)g.style.backgroundSize=(50*scale)+'px '+(50*scale)+'px'; });
   render(); }
@@ -394,7 +399,8 @@ function renderFloor(f,pn,bad){
     place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+esc(elLabel(s))+'</span>'; d.dataset.eid=s.id;
     if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl); pn.appendChild(d); });
   onFloor(items,f).forEach(it=>{ if(it.hidden)return;
-    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' bad shrinebad':'');
+    const parked=isParked(it);
+    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(sel===it.id?' sel':'')+(bad.has(it.id)?' bad shrinebad':'')+(parked?' parked':'');
     const sr=toScreen(V(),it), pxW=sr.sw*scale, pxH=sr.sh*scale;   // 標籤照畫面上的框算字級
     if(it.door){ d.style.transform='rotate('+visualRot(V(),it.rot)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
@@ -418,6 +424,7 @@ function renderFloor(f,pn,bad){
         d.innerHTML='<span class="nm" style="font-size:'+nf.toFixed(1)+'px">'+esc(it.n)+'</span><span class="dm" style="font-size:'+df.toFixed(1)+'px">'+dims+'</span>';
       }
     }
+    if(parked&&!it.door&&!it.win){ const tag=document.createElement('span'); tag.className='ptag'; tag.textContent=f+'F 暫放'; d.appendChild(tag); }   // innerHTML 都寫完了才掛角標
     positionEl(d,it);
     if(overlaps(it)) d.classList.add('bad');
     d.dataset.id=it.id; if(draggable.has(it)) d.addEventListener('pointerdown',startDrag); pn.appendChild(d);
@@ -430,30 +437,36 @@ function placeRot(el,it){ const s=toScreen(V(),it), cx=s.sx+s.sw/2, cy=s.sy+s.sh
   el.style.left=(cx-it.w/2)*scale+'px'; el.style.top=(cy-it.d/2)*scale+'px'; el.style.width=it.w*scale+'px'; el.style.height=it.d*scale+'px'; }
 function positionEl(el,it){ if(it.door||it.win) placeRot(el,it); else place(el,it.x,it.y,it.w,it.d); }
 function skip(a){ return a.door; }
-function overlaps(a){ if(a.door||a.wall||a.win||a.hidden)return false; return onFloor(items,floorOf(a)).some(b=>b!==a && !b.door && !b.wall && !b.win && !b.hidden && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
-function clampPos(it,x,y){ if(it.door) return [x,y]; return [Math.max(0,Math.min(PLAN_W-it.w,x)),Math.max(0,Math.min(PLAN_H-it.d,y))]; }
+function overlaps(a){ if(a.door||a.wall||a.win||a.hidden||isParked(a))return false; return onFloor(items,floorOf(a)).some(b=>b!==a && !b.door && !b.wall && !b.win && !b.hidden && !isParked(b) && !(a.x+a.w<=b.x||b.x+b.w<=a.x||a.y+a.d<=b.y||b.y+b.d<=a.y)); }
+// 設備可以拖出框、放在畫布任何空白處（暫放）；只夾在整張畫布內，不夾在框內。
+// 畫布範圍以「這件所在面板」為原點算：面板左上在畫布的 (ox,oy)，畫布 L.W×L.H，都是 cm。
+function canvasBoundsFor(it){ const L=layoutCm(), i=Math.max(0,viewFloors().indexOf(floorOf(it))), {ox,oy}=L.at(i);
+  const a=toModelPoint(V(),-ox,-oy), b=toModelPoint(V(),L.W-ox,L.H-oy);   // 畫布兩個對角 → 模型座標
+  return {x1:Math.min(a.x,b.x),x2:Math.max(a.x,b.x),y1:Math.min(a.y,b.y),y2:Math.max(a.y,b.y)}; }
+function clampPos(it,x,y){ if(it.door) return [x,y]; const B=canvasBoundsFor(it);
+  return [Math.max(B.x1,Math.min(B.x2-it.w,x)),Math.max(B.y1,Math.min(B.y2-it.d,y))]; }
 
 function snapPos(it,nx,ny){ let sx=nx,sy=ny;
   if(Math.abs(nx)<SNAP)sx=0; if(Math.abs(nx+it.w-PLAN_W)<SNAP)sx=PLAN_W-it.w;
   if(Math.abs(ny)<SNAP)sy=0; if(Math.abs(ny+it.d-PLAN_H)<SNAP)sy=PLAN_H-it.d;
-  onFloor(items,floorOf(it)).forEach(o=>{ if(o===it||o.door||o.win)return;
+  onFloor(items,floorOf(it)).forEach(o=>{ if(o===it||o.door||o.win||isParked(o))return;   // 暫放的不吸
     const vOv=ny<o.y+o.d&&o.y<ny+it.d, hOv=nx<o.x+o.w&&o.x<nx+it.w;
     if(vOv){ if(Math.abs(nx+it.w-o.x)<SNAP)sx=o.x-it.w; else if(Math.abs(nx-(o.x+o.w))<SNAP)sx=o.x+o.w;
       if(Math.abs(nx-o.x)<SNAP)sx=o.x; else if(Math.abs(nx+it.w-(o.x+o.w))<SNAP)sx=o.x+o.w-it.w; }
     if(hOv){ if(Math.abs(ny+it.d-o.y)<SNAP)sy=o.y-it.d; else if(Math.abs(ny-(o.y+o.d))<SNAP)sy=o.y+o.d;
       if(Math.abs(ny-o.y)<SNAP)sy=o.y; else if(Math.abs(ny+it.d-(o.y+o.d))<SNAP)sy=o.y+o.d-it.d; } });
-  return [Math.max(0,Math.min(PLAN_W-it.w,sx)),Math.max(0,Math.min(PLAN_H-it.d,sy))];
+  return clampPos(it,sx,sy);
 }
 
 function renderGaps(){ panels.forEach(pn=>[...pn.querySelectorAll('.gap,.gapln')].forEach(e=>e.remove()));
   const g=$('#gaps'); if(!g||!g.checked) return;
   panels.forEach((pn,f)=>{ const here=onFloor(items,f);
-  here.forEach(a=>{ if(a.door||a.win||a.hidden)return; let best=null,bg=1e9;
-    here.forEach(b=>{ if(b===a||b.door||b.win||b.hidden)return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
+  here.forEach(a=>{ if(a.door||a.win||a.hidden||isParked(a))return; let best=null,bg=1e9;
+    here.forEach(b=>{ if(b===a||b.door||b.win||b.hidden||isParked(b))return; if(!(a.y<b.y+b.d&&b.y<a.y+a.d))return;
       const gg=b.x-(a.x+a.w); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
     if(best&&bg>=1){ const y=(Math.max(a.y,best.y)+Math.min(a.y+a.d,best.y+best.d))/2; addGapLine(pn,a.x+a.w,y,best.x,y,bg); } });
-  here.forEach(a=>{ if(a.door||a.win||a.hidden)return; let best=null,bg=1e9;
-    here.forEach(b=>{ if(b===a||b.door||b.win||b.hidden)return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
+  here.forEach(a=>{ if(a.door||a.win||a.hidden||isParked(a))return; let best=null,bg=1e9;
+    here.forEach(b=>{ if(b===a||b.door||b.win||b.hidden||isParked(b))return; if(!(a.x<b.x+b.w&&b.x<a.x+a.w))return;
       const gg=b.y-(a.y+a.d); if(gg<-1)return; if(gg<bg){bg=gg;best=b;} });
     if(best&&bg>=1){ const x=(Math.max(a.x,best.x)+Math.min(a.x+a.w,best.x+best.w))/2; addGapLine(pn,x,a.y+a.d,x,best.y,bg); } });
   });
@@ -548,7 +561,8 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
     ' 寬 <input id="id" type="number" min="5" step="1" value="'+rv(it.d)+'" style="width:58px">'+
     ' 高 <input id="ih" type="number" min="0" step="1" value="'+rv(it.h||'')+'" style="width:58px"> cm</div>'+
     '<div class="kv">位置 X '+Math.round(it.x)+' · Y '+Math.round(it.y)+'</div>'+
-    '<div class="kv">距牆 後牆'+Math.round(it.x)+' 門口側'+Math.round(PLAN_W-it.x-it.w)+' 樓梯側'+Math.round(it.y)+' 對面牆'+Math.round(PLAN_H-it.y-it.d)+'</div>'+
+    (isParked(it)?'<div class="kv" style="color:var(--sub)">暫放中（在框外）：不算重疊、不套規則、不匯出；拖回框內就恢復</div>':
+      '<div class="kv">距牆 後牆'+Math.round(it.x)+' 門口側'+Math.round(PLAN_W-it.x-it.w)+' 樓梯側'+Math.round(it.y)+' 對面牆'+Math.round(PLAN_H-it.y-it.d)+'</div>')+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'')+
     (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join('');
   const nm=$('#iname'); if(nm)nm.onchange=()=>{ const v=nm.value.trim(); if(v){ it.n=v; save(); render(); } else nm.value=it.n; };
@@ -678,14 +692,14 @@ function buildSVG(){ const s=1.7, L=layoutCm(), floors=viewFloors();
   const ttl=floors.length>1?floors[0]+'F–'+floors[floors.length-1]+'F':curFloor+'F';
   g+='<text x="'+(W/2)+'" y="'+Math.round(22*s)+'" font-family="sans-serif" font-size="'+Math.round(11*s)+'" text-anchor="middle" fill="#111">飲料店 '+ttl+' 平面配置 · 1300×375cm</text>';
   floors.forEach((f,i)=>{
-    const ox=MARGIN+(L.across?i*(L.ps.w+L.gap):0), oy=MARGIN+(L.across?0:i*(L.ps.h+L.gap));   // 面板左上（cm）
+    const {ox,oy}=L.at(i);   // 面板左上（cm）
     const px=v=>(v*s).toFixed(1), R=r=>toScreen(V(),r), Pt=(x,y)=>toScreenPoint(V(),x,y);
     g+='<g data-floor="'+f+'" transform="translate('+ln(ox)+' '+ln(oy)+')">';
     g+='<text x="0" y="'+(-6*s).toFixed(1)+'" font-family="monospace" font-size="'+Math.round(10*s)+'" font-weight="700" fill="#111">'+f+'F</text>';
     g+='<rect x="0" y="0" width="'+ln(L.ps.w)+'" height="'+ln(L.ps.h)+'" fill="none" stroke="'+ink+'" stroke-width="3"/>';
     elementsOn(elements,f).forEach(o=>{ const r=R(o); g+='<rect x="'+px(r.sx)+'" y="'+px(r.sy)+'" width="'+ln(r.sw)+'" height="'+ln(r.sh)+'" fill="'+shc+'" stroke="'+line+'"/>'+
       '<text x="'+px(r.sx+r.sw/2)+'" y="'+px(r.sy+r.sh/2)+'" font-family="monospace" font-size="'+Math.round(9*s)+'" text-anchor="middle" dominant-baseline="middle" fill="'+sub+'">'+esc(elLabel(o))+'</text>'; });
-    onFloor(items,f).forEach(it=>{ if(it.hidden)return; const r=R(it), cx=r.sx+r.sw/2, cy=r.sy+r.sh/2, cxp=px(cx), cyp=px(cy);
+    onFloor(items,f).forEach(it=>{ if(it.hidden||isParked(it))return; const r=R(it), cx=r.sx+r.sw/2, cy=r.sy+r.sh/2, cxp=px(cx), cyp=px(cy);   // 暫放的不匯出
       if(it.door||it.win){ // 門窗：模型尺寸的框放在畫面框中心，繞中心轉 visualRot（跟畫面上的 placeRot 同一招）
         const bx=cx-it.w/2, by=cy-it.d/2; g+='<g transform="rotate('+visualRot(V(),it.rot)+' '+cxp+' '+cyp+')'+(it.door&&it.flip?' translate('+px(2*cx)+' 0) scale(-1 1)':'')+'">';
         if(it.door){ g+='<path d="M'+px(bx)+' '+px(by+it.d)+' A'+ln(it.w)+' '+ln(it.d)+' 0 0 1 '+px(bx+it.w)+' '+px(by)+'" fill="none" stroke="'+sealB+'" stroke-width="1.6"/>'+

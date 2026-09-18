@@ -20,7 +20,7 @@
  * 垃圾桶改成 deleted_at 軟刪除，不再搬檔案。
  */
 
-import { DEFAULT_STRUCTURE, floorOf } from "./rules.js";
+import { DEFAULT_STRUCTURE, floorOf, isParked } from "./rules.js";
 
 const KEEP_REVISIONS = 50;
 
@@ -109,7 +109,7 @@ function thumbSvg(plan, elements = DEFAULT_STRUCTURE) {
     g.push(`<rect data-kind="${xmlAttr(e.kind)}" x="${n(e.x * sx)}" y="${n(e.y * sy)}" width="${n(e.w * sx)}" height="${n(e.d * sy)}" fill="${fill}" stroke="#c6d0ce" stroke-width="0.6"/>`);
   }
   for (const it of items) {
-    if (it.hidden) continue;
+    if (it.hidden || isParked(it)) continue;   // 暫放（完全在框外）的不是擺法的一部分
     const x = n((it.x || 0) * sx), y = n((it.y || 0) * sy);
     const w = n((it.w || 0) * sx), h = n((it.d || 0) * sy);
     if (it.door || it.win) {
