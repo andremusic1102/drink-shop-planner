@@ -1,3 +1,7 @@
+---
+contract_commit: "af81a61393b9e5b2fc2574d69e90eadb2e871923"
+---
+
 # 複製整層 + 多選家具 — 計畫
 
 2026-09-18 定案。術語見 `CONTEXT.md`。前提：plans/structure.md 已上線、seal 6/6（docs/seal-structure.md）。
