@@ -106,27 +106,54 @@ def fetch_all(base, http_fn=http):
     return plans, structure
 
 
-def apply(base, plans, structure, partitions, http_fn=http):
-    """先寫結構、成功才逐份改方案。回傳 True 表示全部成功。"""
+def apply(base, plans, structure, partitions, http_fn=http, retries=3):
+    """先寫結構、成功才逐份改方案。回傳 True 表示全部成功。
+
+    方案 PUT 撞 409（有人剛存過）就重 GET 該方案重做一次：最新版若多了新牆，先把新牆補進結構
+    （重 GET 結構、用新 rev PUT），再 strip 這份用最新 rev PUT——不然新牆會被移掉卻沒進結構。
+    每份最多重做 retries 次，再撞就標失敗（腳本可重跑：partition id 穩定、merge 略過已存在的）。
+    """
     merged = merge_structure(structure.get("elements") or [], partitions)
     st, res = http_fn("PUT", "/api/structure", {"structure": {"elements": merged}, "baseRev": structure.get("rev", 0)}, base=base)
     print("PUT /api/structure →", st, res if st != 200 else f"rev {res['rev']}（{len(merged)} 個元件）")
     if st != 200:
         print("結構沒寫成，方案一律不動；409 表示有人剛存過結構，重跑一次即可")
         return False
+    known = {e["id"] for e in merged}
     ok = True
     for p in plans:
-        walls = [it for it in (p.get("plan") or {}).get("items") or [] if it.get("wall")]
-        if not walls:
-            continue
-        body = {"plan": strip_walls(p.get("plan")), "baseRev": p.get("rev", 0)}
-        st, res = http_fn("PUT", f"/api/plans/{p['id']}", body, base=base)
-        # 409 不在這裡重做：最新版可能多了一道剛加的牆，直接 strip 會把它弄丟（結構那次 PUT 沒收到它）。
-        # 這份不動、標失敗；整支腳本可重跑（partition id 穩定、merge 略過已存在的），重跑會把新牆補進結構再移。
-        print(f"PUT /api/plans/{p['id']}（{p.get('name')}）→", st,
-              ("有人剛存過，這份沒動；重跑一次腳本" if st == 409 else res) if st != 200 else f"rev {res['rev']}，移掉 {len(walls)} 道牆")
-        if st != 200:
+        cur = p
+        for attempt in range(retries + 1):
+            walls = [it for it in (cur.get("plan") or {}).get("items") or [] if it.get("wall")]
+            if not walls:
+                break
+            # 這份（最新版）裡結構還沒有的牆 → 先補進結構
+            fresh = [e for e in collect_partitions([cur]) if e["id"] not in known]
+            if fresh:
+                st_s, cur_struct = http_fn("GET", "/api/structure", base=base)
+                if st_s != 200:
+                    print(f"GET /api/structure 回 {st_s}，方案「{cur.get('name')}」不動"); ok = False; break
+                merged2 = merge_structure(cur_struct.get("elements") or [], fresh)
+                st_s, res_s = http_fn("PUT", "/api/structure", {"structure": {"elements": merged2}, "baseRev": cur_struct.get("rev", 0)}, base=base)
+                print(f"  補 {len(fresh)} 道新牆進結構 →", st_s, res_s if st_s != 200 else f"rev {res_s['rev']}")
+                if st_s != 200:
+                    ok = False; break
+                known |= {e["id"] for e in fresh}
+            body = {"plan": strip_walls(cur.get("plan")), "baseRev": cur.get("rev", 0)}
+            st, res = http_fn("PUT", f"/api/plans/{cur['id']}", body, base=base)
+            if st == 200:
+                print(f"PUT /api/plans/{cur['id']}（{cur.get('name')}）→ 200 rev {res['rev']}，移掉 {len(walls)} 道牆")
+                break
+            if st == 409 and attempt < retries:   # 有人剛存過：拿最新版重做
+                st_g, latest = http_fn("GET", f"/api/plans/{cur['id']}", base=base)
+                if st_g != 200:
+                    print(f"GET /api/plans/{cur['id']} 回 {st_g}，這份不動"); ok = False; break
+                print(f"PUT /api/plans/{cur['id']}（{cur.get('name')}）→ 409，拿 rev {latest.get('rev')} 重做")
+                cur = latest
+                continue
+            print(f"PUT /api/plans/{cur['id']}（{cur.get('name')}）→", st, res)
             ok = False
+            break
     return ok
 
 
