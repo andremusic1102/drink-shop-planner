@@ -54,7 +54,7 @@ contract_commit: "adb3a8a7c1f2624580b6acdd1af5a2eed7f04d10"
   Completion criterion: `cd worker && node --test tests/view.test.js` 全綠，且 `worker/tests/view.test.js` 含測試名「直向：玄關落在面板右下角」「直向：拖曳 delta 轉回模型後再轉回畫面等於原值」「直向：點在面板左上角 = 模型 (0, 375)」「橫向：toScreen 是恆等」「門 rot=0 直向顯示 90」；`grep -c "view.js" worker/package.json` ≥ 1。
 
 - [ ] D2: 前端多面板
-  `app.html`：`.planwrap` 內依 `view.floors` 放 1 或 4 個 `.plan[data-floor]`（四層時左到右 1F–4F、每個面板上方標「nF」）；`place()`、量測線 SVG、距離標示（`.gap`／`.gapln`）、投影、結構元件、設備全走 `toScreen`；拖曳與量測點擊用 `fromScreenDelta`／`toModelPoint`；門窗 `style.transform` 用 `visualRot`；`fit()` 依面板數與方向算 `scale`（四層時寬度 = 4×面板寬＋3×間距）；面板 `pointerdown` 先 `setFloor(面板樓層)`；開關 `id="orientToggle"`（直向／橫向）與 `id="allFloors"`（四層／單層）存 localStorage `drinkshop_view`；單一 `plan` 元素的引用全部改成 per-panel（`panelOf(floor)`）。
+  `app.html`：`.planwrap` 內依 `view.floors` 放 1 或 4 個 `.plan[data-floor]`（照定案表的「面板排列」：直向四層左到右 1F–4F、橫向四層上到下 1F–4F；每個面板上方標「nF」）；`place()`、量測線 SVG、距離標示（`.gap`／`.gapln`）、投影、結構元件、設備全走 `toScreen`；拖曳與量測點擊用 `fromScreenDelta`／`toModelPoint`；門窗 `style.transform` 用 `visualRot`；`fit()` 依面板數與方向算 `scale`（直向四層：寬度 = 4×面板寬＋3×間距；橫向四層：高度 = 4×面板高＋3×間距）；面板 `pointerdown` 先 `setFloor(面板樓層)`；開關 `id="orientToggle"`（直向／橫向）與 `id="allFloors"`（四層／單層）存 localStorage `drinkshop_view`；單一 `plan` 元素的引用全部改成 per-panel（`panelOf(floor)`）。
   Completion criterion: `grep -c 'id="orientToggle"' app.html` 回 1；`grep -c 'id="allFloors"' app.html` 回 1；`grep -c "plan\.appendChild" app.html` 回 0；`grep -c "plan\.querySelectorAll" app.html` 回 0；`grep -c "toScreen(" app.html` ≥ 5；`grep -c "圖的右邊" app.html` 回 0；`cd worker && node --test` 全綠。
 
 - [ ] D3: 匯出跟著檢視

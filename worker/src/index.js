@@ -20,7 +20,8 @@
  * 垃圾桶改成 deleted_at 軟刪除，不再搬檔案。
  */
 
-import { DEFAULT_STRUCTURE, floorOf, isParked } from "./rules.js";
+import { DEFAULT_STRUCTURE, floorOf } from "./rules.js";
+import { isParked } from "./floors.js";
 
 const KEEP_REVISIONS = 50;
 
