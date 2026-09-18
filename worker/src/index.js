@@ -31,10 +31,11 @@ const STRUCTURE_ID = "structure";
 const PLAN_W = 1300;
 const PLAN_H = 375;
 
-// 結構元件的 kind 允許集合。前端 app.html 的「＋ 梁／＋ 廁所／＋ 樓梯」按鈕
-// （加上預設的玄關）只會送這四種；其他值一律當壞 body 回 400，
+// 結構元件的 kind 允許集合。前端 app.html 的「＋ 梁／＋ 廁所／＋ 房間隔層」按鈕
+// （加上預設的玄關、原本就有的樓梯）只會送這五種；其他值一律當壞 body 回 400，
 // 因為 kind 會被寫進縮圖 SVG 的屬性，不能讓任意字串進 D1。
-const ELEMENT_KINDS = ["beam", "stairs", "bath", "entry"];
+// partition（房間隔層）2026-09-17 加：隔間牆從方案設備搬進結構，全部方案共用。
+const ELEMENT_KINDS = ["beam", "stairs", "bath", "entry", "partition"];
 
 // XML 屬性值跳脫（& < > " '）。縮圖 SVG 插進屬性的字串都要過這裡 ——
 // 即使 D1 裡已經有 normalizeElements 上線前寫入的舊資料，也不會跳出屬性。
@@ -106,8 +107,10 @@ function thumbSvg(plan, elements = DEFAULT_STRUCTURE) {
     `<rect width="${W}" height="${H}" fill="#ffffff"/>`,
   ];
   for (const e of els) {
-    const fill = e.kind === "beam" ? "url(#beam)" : "#e9ecec";
-    g.push(`<rect data-kind="${xmlAttr(e.kind)}" x="${n(e.x * sx)}" y="${n(e.y * sy)}" width="${n(e.w * sx)}" height="${n(e.d * sy)}" fill="${fill}" stroke="#c6d0ce" stroke-width="0.6"/>`);
+    // 房間隔層畫成深色實心（跟前端牆同色），其他殼是淡灰；梁是斜線
+    const fill = e.kind === "beam" ? "url(#beam)" : e.kind === "partition" ? "#2f3a3a" : "#e9ecec";
+    const stroke = e.kind === "partition" ? "#2f3a3a" : "#c6d0ce";
+    g.push(`<rect data-kind="${xmlAttr(e.kind)}" x="${n(e.x * sx)}" y="${n(e.y * sy)}" width="${n(e.w * sx)}" height="${n(e.d * sy)}" fill="${fill}" stroke="${stroke}" stroke-width="0.6"/>`);
   }
   for (const it of items) {
     if (it.hidden || isParked(it)) continue;   // 暫放（完全在框外）的不是擺法的一部分
