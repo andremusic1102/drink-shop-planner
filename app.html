@@ -563,11 +563,12 @@ function layoutHandles(fxEl,s){ const v=V(), o=toScreen(v,s);
 function addHandles(fxEl,s){ stretchSides(s).forEach(side=>{ const h=document.createElement('div'); h.className='hd'; h.dataset.side=side; h.title='拖這裡只改這一邊';
     h.addEventListener('pointerdown',startStretch); fxEl.appendChild(h); }); layoutHandles(fxEl,s); }
 let stretch=null;
-function startStretch(e){ if(measuring){ handleMeasureClick(e); return; } const h=e.currentTarget, fxEl=h.parentElement, s=elements.find(x=>x.id===fxEl.dataset.eid); if(!s)return;
+function startStretch(e){ e.stopPropagation();   // 一進來就擋冒泡：任何提前 return 都不能讓父層 startDragEl 再跑一次
+  if(measuring){ handleMeasureClick(e); return; } const h=e.currentTarget, fxEl=h.parentElement, s=elements.find(x=>x.id===fxEl.dataset.eid); if(!s)return;
   stretch={s,h,fxEl,side:h.dataset.side,sx:e.clientX,sy:e.clientY,orig:{x:s.x,y:s.y,w:s.w,d:s.d}};
   try{h.setPointerCapture(e.pointerId);}catch(_){}
   h.addEventListener('pointermove',onStretch); h.addEventListener('pointerup',endStretch); h.addEventListener('pointercancel',endStretch);
-  e.preventDefault(); e.stopPropagation(); }
+  e.preventDefault(); }
 function onStretch(e){ if(!stretch)return; const {s,side,orig}=stretch;
   const dm=fromScreenDelta(V(),(e.clientX-stretch.sx)/scale,(e.clientY-stretch.sy)/scale);
   const r=stretchSide(orig,side,side[0]==='x'?dm.dx:dm.dy);
