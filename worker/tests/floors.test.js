@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { cur, elementsOn, projection, draggableSet, FLOORS, isParked, PROJECTED_KINDS, cloneTo, moveTo, copyFloor, cloneMany, moveMany, COPYABLE_KINDS, onWalkway, stretchSide, stretchSides } from "../src/floors.js";
+import { cur, elementsOn, projection, draggableSet, isStructuralItem, FLOORS, isParked, PROJECTED_KINDS, cloneTo, moveTo, copyFloor, cloneMany, moveMany, COPYABLE_KINDS, onWalkway, stretchSide, stretchSides } from "../src/floors.js";
 
 const items = [
   { id: 1, n: "冰箱", c: "cold", x: 10, y: 10, w: 60, d: 60 },                 // floor 缺 → 1F
@@ -66,15 +66,25 @@ test("投影每筆帶 ref 指回原物件（前端亮紅框用）", () => {
 
 test("結構模式開著：可拖集合只含結構元件", () => {
   const d = draggableSet("structure", items, elements, 1);
-  assert.deepEqual(d.map((e) => e.id), ["bath-1"]);
-  assert.ok(!d.some((e) => e.c), "沒有任何設備混進來");
+  assert.deepEqual(d.map((e) => e.id), ["bath-1", 2, 5], "結構元件＋當層神明桌");
+  assert.ok(!d.some((e) => e.c && e.c !== "shrine"), "一般設備不會混進來");
 });
 
 test("結構模式關著：可拖集合只含設備", () => {
   const d = draggableSet("items", items, elements, 1);
-  assert.deepEqual(d.map((i) => i.id), [1, 2, 5]);
+  assert.deepEqual(d.map((i) => i.id), [1]);
   assert.ok(!d.some((e) => e.kind), "沒有任何結構元件混進來");
-  assert.deepEqual(draggableSet(undefined, items, elements, 2).map((i) => i.id), [3, 4], "mode 缺＝設備模式");
+  assert.deepEqual(draggableSet(undefined, items, elements, 2).map((i) => i.id), [3], "mode 缺＝設備模式");
+});
+
+test("神明桌算結構：日常（設備模式）不可拖，編輯結構才可拖", () => {
+  assert.equal(isStructuralItem(items[1]), true);
+  assert.equal(isStructuralItem(items[0]), false);
+  for (const f of FLOORS) {
+    assert.ok(!draggableSet("items", items, elements, f).some((it) => it.c === "shrine"), f + "F 設備模式沒有神明桌");
+  }
+  assert.ok(draggableSet("structure", items, elements, 2).some((it) => it.id === 4), "2F 編輯結構可拖 2F 的神明桌");
+  assert.ok(!draggableSet("structure", items, elements, 2).some((it) => it.id === 2), "別層的神明桌不在可拖集合");
 });
 
 test("FLOORS 是 1–4", () => {
@@ -108,7 +118,7 @@ test("門窗在框外不算暫放", () => {
 
 test("結構模式：樓梯不在可拖集合", () => {
   const els = [...elements, { id: "stairs-1", kind: "stairs", floor: 1, name: "樓梯", x: 858, y: 0, w: 267, d: 100 }];
-  assert.deepEqual(draggableSet("structure", items, els, 1).map((e) => e.id), ["bath-1"], "廁所可拖、樓梯不可");
+  assert.deepEqual(draggableSet("structure", items, els, 1).filter((e) => e.kind).map((e) => e.id), ["bath-1"], "廁所可拖、樓梯不可");
   assert.deepEqual(elementsOn(els, 1).map((e) => e.id), ["bath-1", "stairs-1"], "但樓梯還是當層的結構元件（會畫、可選）");
 });
 

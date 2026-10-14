@@ -137,6 +137,10 @@
   .plan.structmode .it{pointer-events:none;opacity:.45}
   .plan.structmode .fx{pointer-events:auto;cursor:grab;z-index:11;outline:1.5px dashed var(--accent);outline-offset:-2px}
   .plan.structmode .fx.sel{outline:2.5px solid var(--sel);z-index:13}
+  /* 神明桌算結構（2026-10-14）：平常鎖住（可點選看資訊、不可拖）；編輯結構時跟結構元件一樣可拖 */
+  .it.structit,.it.structit:active{cursor:default}
+  .plan.structmode .it.structit{pointer-events:auto;opacity:1;cursor:grab;z-index:12;outline:1.5px dashed var(--accent);outline-offset:-2px}
+  .plan.structmode .it.structit.sel{outline:2.5px solid var(--sel)}
   /* 邊把手：結構模式選中的隔層／走道／廁所，拖一邊只改那一邊（隔層只有長軸兩端） */
   .hd{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:var(--sel);border:2px solid #fff;box-shadow:0 0 0 1px var(--sel);z-index:14;pointer-events:auto;touch-action:none}
   .proj.bad{border-color:var(--sel);color:var(--sel);opacity:.9;border-width:2.5px}
@@ -174,7 +178,7 @@
       <label class="tgl" title="直向：門口在下、樓梯在右，跟原始 CAD 同向"><input type="checkbox" id="orientToggle" checked> 直向</label>
       <label class="tgl" title="四層左到右並排；手機上小，關掉只看目前樓層"><input type="checkbox" id="allFloors"> 四層並排</label>
       <label class="tgl"><input type="checkbox" id="projToggle" checked> 投影別層</label>
-      <label class="tgl" title="開著只能動梁／樓梯／廁所／玄關，設備鎖住；關著反過來"><input type="checkbox" id="structMode"> 🏗 編輯結構</label>
+      <label class="tgl" title="開著只能動梁／廁所／玄關／神明桌，設備鎖住；關著反過來"><input type="checkbox" id="structMode"> 🏗 編輯結構</label>
       <button class="structbtn" id="addBeam">＋ 梁</button>
       <button class="structbtn" id="addBath">＋ 廁所</button>
       <button class="structbtn" id="addPartition" title="房子的隔間，全部方案共用；厚 10 cm">＋ 房間隔層</button>
@@ -248,7 +252,7 @@
 
 <script type="module">
 import { DEFAULT_STRUCTURE, shrineViolations } from './rules.js';
-import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany, copyFloor, COPYABLE_KINDS, onWalkway, stretchSide, stretchSides } from './floors.js';
+import { FLOORS, KIND_LABEL, cur as onFloor, elementsOn, projection, draggableSet, isStructuralItem, floorOf, isParked, cloneTo, moveTo, cloneMany, moveMany, copyFloor, COPYABLE_KINDS, onWalkway, stretchSide, stretchSides } from './floors.js';
 import { toScreen, toScreenPoint, fromScreenDelta, toModelPoint, panelSize, visualRot, isVertical } from './view.js';
 // MARGIN：畫布四周的空白；門口側（+x 之外）留 ENTRY_MARGIN，暫放時放得下最長的家具（DWG 那批 274）
 const PLAN_W=1300, PLAN_H=375, SNAP=8, MARGIN=140, ENTRY_MARGIN=300, PANEL_GAP=120;
@@ -273,10 +277,13 @@ function setFloor(f){ const same=f===curFloor; curFloor=f; sel=null; selEl=null;
 
 // ===== 檢視（CONTEXT.md）：同一份方案怎麼擺到畫面上。只是這台瀏覽器的狀態，不進方案 =====
 // orient 'v' 直向（門口在下、樓梯在右，跟原始 CAD 同向）| 'h' 橫向；all 四層並排 | 單層。
-// 初始值：直向；四層並排照視窗寬（≥720px 才開，跟 .panel 的手機斷點同一個數字）。
-let view={orient:'v',all:window.innerWidth>=720};
-try{ const v=JSON.parse(localStorage.getItem('drinkshop_view')); if(v&&typeof v==='object'){ if(v.orient==='h'||v.orient==='v')view.orient=v.orient; if(typeof v.all==='boolean')view.all=v.all; } }catch(e){}
-function saveView(){ try{localStorage.setItem('drinkshop_view',JSON.stringify(view));}catch(e){} }
+// 初始值：直向、單層（2026-10-14 Andre：不要預設四層並排）。勾了「四層並排」會記在這台瀏覽器。
+// 舊 key drinkshop_view 的 all 多半是當年照視窗寬自動存進去的（不是使用者選的），所以只沿用 orient、
+// all 從新 key drinkshop_view2 讀——每台瀏覽器都先回到單層一次。
+let view={orient:'v',all:false};
+try{ const v=JSON.parse(localStorage.getItem('drinkshop_view')); if(v&&(v.orient==='h'||v.orient==='v'))view.orient=v.orient; }catch(e){}
+try{ const v=JSON.parse(localStorage.getItem('drinkshop_view2')); if(v&&typeof v==='object'){ if(v.orient==='h'||v.orient==='v')view.orient=v.orient; if(typeof v.all==='boolean')view.all=v.all; } }catch(e){}
+function saveView(){ try{localStorage.setItem('drinkshop_view2',JSON.stringify(view));}catch(e){} }
 const V=()=>({orient:view.orient,floors:viewFloors()});
 const viewFloors=()=>view.all?FLOORS.slice():[curFloor];
 const isV=()=>view.orient==='v';
@@ -420,7 +427,7 @@ function renderFloor(f,pn,bad){
     if(mode()==='structure'&&selEl===s.id) addHandles(d,s); });
   onFloor(items,f).forEach(it=>{ if(it.hidden)return;
     const parked=isParked(it);
-    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(isSel(it.id)?' sel':'')+(bad.has(it.id)?' bad shrinebad':'')+(parked?' parked':'');
+    const d=document.createElement('div'); d.className='it'+(it.door?' door':'')+(it.win?' win':'')+(it.wall?' wallit':'')+(isStructuralItem(it)?' structit':'')+(isSel(it.id)?' sel':'')+(bad.has(it.id)?' bad shrinebad':'')+(parked?' parked':'');
     const sr=toScreen(V(),it), pxW=sr.sw*scale, pxH=sr.sh*scale;   // 標籤照畫面上的框算字級
     if(it.door){ d.style.transform='rotate('+visualRot(V(),it.rot)+'deg) scaleX('+(it.flip?-1:1)+')'; const sb=cssv('--sealB');
       d.innerHTML='<svg viewBox="0 0 100 100" preserveAspectRatio="none">'+
@@ -447,7 +454,9 @@ function renderFloor(f,pn,bad){
     if(parked&&!it.door&&!it.win){ const tag=document.createElement('span'); tag.className='ptag'; tag.textContent=f+'F 暫放'; d.appendChild(tag); }   // innerHTML 都寫完了才掛角標
     positionEl(d,it);
     if(overlaps(it)||onWalkway(it,elements)) d.classList.add('bad');
-    d.dataset.id=it.id; if(draggable.has(it)) d.addEventListener('pointerdown',startDrag); pn.appendChild(d);
+    d.dataset.id=it.id; if(draggable.has(it)) d.addEventListener('pointerdown',startDrag);
+    else if(isStructuralItem(it)) d.addEventListener('pointerdown',selectOnlyItem);   // 神明桌平常：可點選看資訊，不可拖
+    pn.appendChild(d);
   });
 }
 // 模型矩形 → 面板上的 px（走檢視轉換；標籤永遠水平）
@@ -503,6 +512,7 @@ function addGapLine(pn,x1,y1,x2,y2,v){ const s=toScreen(V(),{x:Math.min(x1,x2),y
 let drag=null;
 function startDrag(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget,id=+el.dataset.id,it=items.find(i=>i.id===id); if(!it)return;
   setFloorQuiet(floorOf(it));   // 四層並排：在哪個面板拖，那層就是目前樓層（不重畫，正在拖的元素要留著）
+  if(structMode){ selEl=null; panels.forEach(pn=>pn.querySelectorAll('.fx.sel').forEach(x=>x.classList.remove('sel'))); }   // 編輯結構時拖神明桌：取消結構元件的選取
   let maybeDeselect=false;
   if(multiOn()||e.shiftKey){   // 多選：點一件加一件；點已選的那件＝放開時沒移動就取消、有移動就是整群拖曳
     if(selSet.has(id)){ maybeDeselect=true; sel=id; }
@@ -511,7 +521,8 @@ function startDrag(e){ if(measuring){ handleMeasureClick(e); return; } const el=
     sel=id; selSet=new Set([id]); panels.forEach(pn=>pn.querySelectorAll('.it.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
   } else { sel=id; }
   // 群組拖曳：其他被選的設備跟著同一個位移（各自夾在畫布內、不吸附）
-  const others=[...selSet].filter(x=>x!==id).map(x=>items.find(i=>i.id===x)).filter(Boolean).map(o=>({it:o,ox:o.x,oy:o.y,el:(panelOf(floorOf(o))||{querySelector(){return null;}}).querySelector('.it[data-id="'+o.id+'"]')}));
+  // 神明桌是結構：平常即使被選進群組（從清單選），也不跟著群組一起動
+  const others=[...selSet].filter(x=>x!==id).map(x=>items.find(i=>i.id===x)).filter(o=>o&&(structMode||!isStructuralItem(o))).map(o=>({it:o,ox:o.x,oy:o.y,el:(panelOf(floorOf(o))||{querySelector(){return null;}}).querySelector('.it[data-id="'+o.id+'"]')}));
   drag={it,el,sx:e.clientX,sy:e.clientY,ox:it.x,oy:it.y,others,maybeDeselect,moved:false};
   try{el.setPointerCapture(e.pointerId);}catch(_){}
   el.addEventListener('pointermove',onDrag); el.addEventListener('pointerup',endDrag); el.addEventListener('pointercancel',endDrag);
@@ -539,6 +550,9 @@ let dragEl=null;
 function selectOnlyEl(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget, s=elements.find(x=>x.id===el.dataset.eid); if(!s)return;
   setFloorQuiet(floorOf(s)); selEl=s.id; sel=null; panels.forEach(pn=>pn.querySelectorAll('.fx.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
   updateSel(); e.preventDefault(); e.stopPropagation(); }
+// 只選取、不拖（平常的神明桌）：切到那層、單選它、面板顯示資訊與神明桌限制；沒有 pointermove
+function selectOnlyItem(e){ if(measuring){ handleMeasureClick(e); return; } const it=items.find(i=>i.id===+e.currentTarget.dataset.id); if(!it)return;
+  setFloorQuiet(floorOf(it)); sel=it.id; selSet=new Set([it.id]); e.preventDefault(); e.stopPropagation(); render(); }
 function startDragEl(e){ if(measuring){ handleMeasureClick(e); return; } const el=e.currentTarget, s=elements.find(x=>x.id===el.dataset.eid); if(!s)return;
   setFloorQuiet(floorOf(s));
   selEl=s.id; sel=null; panels.forEach(pn=>pn.querySelectorAll('.fx.sel').forEach(x=>x.classList.remove('sel'))); el.classList.add('sel');
@@ -581,7 +595,7 @@ function endStretch(){ if(!stretch)return; const h=stretch.h;
 function floorOpts(label){ return '<option value="">'+label+'…</option>'+FLOORS.map(f=>'<option value="'+f+'">'+f+'F</option>').join(''); }
 function bindFloorSelect(id,fn){ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const f=+el.value; el.value=''; if(FLOORS.includes(f)) fn(f); }; }
 function updateSelEl(){ const s=elements.find(x=>x.id===selEl);
-  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／廁所／房間隔層／走道／玄關來移動或改尺寸；隔層／走道／廁所選中後拖邊上的圓點可以只拉一邊；樓梯固定不可拖；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
+  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／廁所／房間隔層／走道／玄關／神明桌來移動或改尺寸；隔層／走道／廁所選中後拖邊上的圓點可以只拉一邊；樓梯固定不可拖；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
   $('#selBody').style.color='var(--ink)'; $('#selBtns').style.display='none';
   const num=(id,v)=>'<input id="'+id+'" type="number" step="1" value="'+Math.round(v)+'" style="width:64px">';
   $('#selBody').innerHTML='<div class="kv"><b>'+esc(KIND_LABEL[s.kind]||s.kind)+'</b> · '+floorOf(s)+'F'+(s.kind==='stairs'?' · <span style="color:var(--sub)">樓梯固定，不可拖</span>':'')+'</div>'+
@@ -600,7 +614,11 @@ function updateSelEl(){ const s=elements.find(x=>x.id===selEl);
   bind('en','name',0,0); bind('ex','x',0,PLAN_W); bind('ey','y',0,PLAN_H); bind('ew','w',5,PLAN_W); bind('ed','d',5,PLAN_H);
   const db=$('#edel'); if(db)db.onclick=delElement; }
 
-function rotate(){ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
+// 神明桌是結構：平常不能轉、不能刪；編輯結構時可以（它的轉向就是神明桌限制的「正面」）
+const lockedShrine=it=>!!it&&isStructuralItem(it)&&!structMode;
+const shrineLockToast=()=>toast('神明桌是結構：要移動／旋轉／刪除請先開「🏗 編輯結構」');
+function rotate(){ if(sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return;
+  if(structMode&&!isStructuralItem(it))return; if(lockedShrine(it)){ shrineLockToast(); return; }
   const cx=it.x+it.w/2,cy=it.y+it.d/2; if(!it.door&&!it.win)[it.w,it.d]=[it.d,it.w]; it.rot=((it.rot||0)+90)%360;
   [it.x,it.y]=clampPos(it,cx-it.w/2,cy-it.d/2); save(); render(); }
 function dup(){ if(structMode||sel==null)return;
@@ -611,10 +629,16 @@ function dup(){ if(structMode||sel==null)return;
     items=items.concat(made); selSet=new Set(made.map(i=>i.id)); sel=made[made.length-1].id; save(); render(); return; }
   const it=items.find(i=>i.id===sel); if(!it)return;
   const c=JSON.parse(JSON.stringify(it)); c.id=nextId(); [c.x,c.y]=clampPos(c,it.x+30,it.y+30); items.push(c); sel=c.id; save(); render(); }
-function del(){ if(structMode){ delElement(); return; } if(sel==null)return; const gone=selSet.size>1?selSet:new Set([sel]); items=items.filter(i=>!gone.has(i.id)); sel=null; save(); render(); }
+function del(){ if(structMode){ const s=items.find(i=>i.id===sel);
+    if(!selEl&&isStructuralItem(s)){ if(!confirm('刪除這份方案的「'+(s.n||'神明桌')+'」？'))return; items=items.filter(i=>i.id!==s.id); sel=null; save(); render(); return; }
+    delElement(); return; }
+  if(sel==null)return; const gone=selSet.size>1?selSet:new Set([sel]);
+  if([...gone].some(id=>isStructuralItem(items.find(i=>i.id===id)))){ shrineLockToast(); return; }
+  items=items.filter(i=>!gone.has(i.id)); sel=null; save(); render(); }
 function hideSel(){ if(structMode||sel==null)return; const ids=selSet.size>1?selSet:new Set([sel]); items.forEach(i=>{ if(ids.has(i.id))i.hidden=true; }); sel=null; save(); render(); }
 
-function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.find(i=>i.id===sel);
+function updateSel(){ const it=items.find(i=>i.id===sel);
+  if(structMode&&!(it&&isStructuralItem(it)&&!selEl)){ updateSelEl(); return; }   // 編輯結構時選中的神明桌照樣用設備面板
   if(!it){$('#selBody').innerHTML='點一個方塊來看尺寸／移動它'+(multiOn()?'<br>多選開著：點一件加一件、再點取消':'');$('#selBody').style.color='var(--sub)';$('#selBtns').style.display='none';return;}
   if(selSet.size>1){ updateSelMany(); return; }
   $('#selBody').style.color='var(--ink)';$('#selBtns').style.display='flex';
@@ -643,7 +667,8 @@ function updateSel(){ if(structMode){ updateSelEl(); return; } const it=items.fi
       '<div class="kv">距牆 後牆'+Math.round(it.x)+' 門口側'+Math.round(PLAN_W-it.x-it.w)+' 樓梯側'+Math.round(it.y)+' 對面牆'+Math.round(PLAN_H-it.y-it.d)+'</div>')+
     (overlaps(it)?'<div class="kv" style="color:var(--sel)">⚠ 和別件重疊</div>':'')+
     (()=>{ const w=onWalkway(it,elements); return w?'<div class="kv" style="color:var(--sel)">⚠ 壓到走道「'+esc(elLabel(w))+'」</div>':''; })()+
-    (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join('');
+    (violations().get(it.id)||[]).map(v=>'<div class="kv" style="color:var(--sel)">⛔ 神明桌'+ruleText(v)+'</div>').join('')+
+    (isStructuralItem(it)?'<div class="kv" style="color:var(--sub)">'+(structMode?'🏗 編輯結構中：可拖、可旋轉、可刪除':'🔒 神明桌是結構，平常鎖住；要移動請開「🏗 編輯結構」')+'</div>':'');
   const nm=$('#iname'); if(nm)nm.onchange=()=>{ const v=nm.value.trim(); if(v){ it.n=v; save(); render(); } else nm.value=it.n; };
   // 長寬夾在圖框內（跟結構元件面板一樣）：超過會讓 clampPos 的範圍變負、距牆出現負值
   const bindDim=(id,k,min,max)=>{ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const raw=el.value.trim();
