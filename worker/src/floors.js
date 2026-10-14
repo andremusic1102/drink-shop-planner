@@ -59,12 +59,22 @@ export function projection(elements, items, floor) {
 }
 
 /**
- * 這一刻能被拖的東西。「編輯結構」開關開著（mode==='structure'）只有當層的結構元件能動，
- * 關著只有當層的設備能動——兩種東西永遠不會同時可拖（2026-09-17 定案：避免排設備時誤碰梁）。
+ * 神明桌算結構（2026-10-14 Andre：「神明桌變成結構」，日常排設備時不會誤拖到）。
+ * 資料仍是方案裡的設備（c:'shrine'，每份方案各自的位置、神明桌限制照舊），
+ * 只是拖曳權限跟結構元件走：「編輯結構」關著時鎖住，開著時才能拖。
+ */
+export function isStructuralItem(it) {
+  return !!it && it.c === "shrine";
+}
+
+/**
+ * 這一刻能被拖的東西。「編輯結構」開關開著（mode==='structure'）只有當層的結構元件＋神明桌能動，
+ * 關著只有當層的一般設備能動——兩種東西永遠不會同時可拖（2026-09-17 定案：避免排設備時誤碰梁）。
  */
 export function draggableSet(mode, items, elements, floor) {
   // 樓梯固定不動（2026-09-17 定案）：結構模式下也不可拖；面板仍可打數字、可刪、可複製到別層
-  return mode === "structure" ? elementsOn(elements, floor).filter((e) => e.kind !== "stairs") : cur(items, floor);
+  if (mode === "structure") return elementsOn(elements, floor).filter((e) => e.kind !== "stairs").concat(cur(items, floor).filter(isStructuralItem));
+  return cur(items, floor).filter((it) => !isStructuralItem(it));
 }
 
 /**
