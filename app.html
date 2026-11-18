@@ -635,7 +635,7 @@ function del(){ if(structMode){ const s=items.find(i=>i.id===sel);
   if(sel==null)return; const gone=selSet.size>1?selSet:new Set([sel]);
   if([...gone].some(id=>isStructuralItem(items.find(i=>i.id===id)))){ shrineLockToast(); return; }
   items=items.filter(i=>!gone.has(i.id)); sel=null; save(); render(); }
-function hideSel(){ if(structMode||sel==null)return; const ids=selSet.size>1?selSet:new Set([sel]); items.forEach(i=>{ if(ids.has(i.id))i.hidden=true; }); sel=null; save(); render(); }
+function hideSel(){ if(structMode||sel==null)return; const ids=selSet.size>1?selSet:new Set([sel]); FLOORS.forEach(f=>onFloor(items,f).forEach(i=>{ if(ids.has(i.id))i.hidden=true; }));   // 多選可跨面板：逐層走 cur() sel=null; save(); render(); }
 
 function updateSel(){ const it=items.find(i=>i.id===sel);
   if(structMode&&!(it&&isStructuralItem(it)&&!selEl)){ updateSelEl(); return; }   // 編輯結構時選中的神明桌照樣用設備面板

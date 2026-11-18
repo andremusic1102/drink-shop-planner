@@ -30,18 +30,27 @@ test("elementsOn() 只回當層的結構元件", () => {
   assert.deepEqual(elementsOn(elements, 4), []);
 });
 
-test("投影只含梁與樓梯，不含廁所玄關隔層", () => {
+test("投影：在 1F 含 2F 廁所、不含 1F 廁所", () => {
+  const p = projection(elements, items, 1);
+  const baths = p.filter((x) => x.src === "element" && x.kind === "bath");
+  assert.deepEqual(baths.map((x) => [x.name, x.floor]), [["廁所 2F", 2]], "別層的廁所疊上來，帶它自己的樓層");
+  assert.equal(baths[0].ref, elements[1], "ref 指回 2F 廁所本身（前端亮紅框用）");
+  assert.ok(!p.some((x) => x.name === "廁所 1F"), "本層的廁所不是投影，由 elementsOn 畫");
+});
+
+test("投影含梁、樓梯、廁所，不含玄關隔層走道", () => {
   const els = [...elements,
     { id: "stairs-2", kind: "stairs", floor: 2, name: "樓梯 2F", x: 858, y: 0, w: 267, d: 100 },
     { id: "entry-2", kind: "entry", floor: 2, name: "玄關 2F", x: 1125, y: 0, w: 175, d: 100 },
     { id: "partition-2", kind: "partition", floor: 2, name: "房間隔層", x: 300, y: 0, w: 10, d: 375 },
+    { id: "walkway-2", kind: "walkway", floor: 2, name: "走道 2F", x: 582, y: 0, w: 80, d: 82 },
   ];
   const p = projection(els, items, 1);
   const names = p.filter((x) => x.src === "element").map((x) => x.name);
-  assert.deepEqual(names, ["梁 3F", "樓梯 2F"], "梁與樓梯照投（所有其他樓層，不只上一層）");
-  assert.ok(!names.includes("廁所 2F") && !names.includes("玄關 2F") && !names.includes("房間隔層"));
+  assert.deepEqual(names, ["廁所 2F", "梁 3F", "樓梯 2F"], "梁／樓梯／廁所照投（所有其他樓層，不只上一層）");
+  assert.ok(!names.includes("玄關 2F") && !names.includes("房間隔層") && !names.includes("走道 2F"));
   assert.deepEqual(p.filter((x) => x.src === "shrine"), [], "1F 之下沒有樓層，沒有神明桌可投影");
-  assert.deepEqual(PROJECTED_KINDS, ["beam", "stairs"]);
+  assert.deepEqual(PROJECTED_KINDS, ["beam", "stairs", "bath"]);
 });
 
 test("投影：在 2F 含 1F 神明桌、不含 1F 冰箱", () => {
@@ -51,7 +60,7 @@ test("投影：在 2F 含 1F 神明桌、不含 1F 冰箱", () => {
   assert.ok(!p.some((x) => x.name === "冰箱"));
   assert.ok(!p.some((x) => x.name === "神明桌B"), "同層的神明桌不是投影，是本層的設備");
   assert.ok(!p.some((x) => x.name === "隱藏神明桌"));
-  assert.deepEqual(p.filter((x) => x.src === "element").map((x) => x.name), ["梁 3F"], "廁所不投影，梁照投");
+  assert.deepEqual(p.filter((x) => x.src === "element").map((x) => x.name), ["廁所 1F", "梁 3F"], "別層的廁所與梁照投，本層 2F 廁所不投");
 });
 
 test("投影：在 3F 含 1F 與 2F 的神明桌，帶各自樓層", () => {

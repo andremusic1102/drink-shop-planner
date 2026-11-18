@@ -39,8 +39,9 @@ export function elementsOn(elements, floor) {
  * 每筆 {src:'element'|'shrine', floor, kind, name, x, y, w, d, ref}，ref 指回原物件。
  * 隱藏的神明桌不投影。
  */
-// 投影只畫這幾種結構元件（2026-09-17 定案：廁所／玄關／房間隔層疊上來太吵，神明桌規則不靠投影）
-export const PROJECTED_KINDS = ["beam", "stairs"];
+// 投影畫這幾種結構元件。廁所要投（凍結契約 D3：站在 1F 看得到 2F 的廁所，神明桌擺位才知道正上方有沒有廁所）；
+// 玄關／房間隔層／走道疊上來太吵，不投。本層自己的元件不是投影，由 elementsOn 畫。
+export const PROJECTED_KINDS = ["beam", "stairs", "bath"];
 export function projection(elements, items, floor) {
   const f = Number(floor) || 1;
   const out = [];
