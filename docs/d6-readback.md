@@ -83,3 +83,18 @@ deploy 後我立刻用 `PUT baseRev 6` 送壞 kind 驗證——**錯誤**：新�
 20 秒後再驗，改用 `baseRev 0`（就算沒擋也只會 409、不會覆寫）：三次都 400，rev 仍 8。
 
 教訓：deploy 後的驗證請求必須是不可能寫入成功的（舊 baseRev／唯讀端點），不能拿正式資料當靶。
+
+## 2026-11-17 deploy（D3 投影含別層廁所、D4「＋ 樓梯」與樓梯可拖；U29／U30）
+
+`cd worker && CLOUDFLARE_ACCOUNT_ID=639b345cf87fb5c385e13bcfe5f2fe09 npm run deploy`
+→ `Current Version ID: 6f136d78-de28-4e8f-9d55-dd8b70a27147`，兩個 custom domain 都列出。
+deploy 時的 `git rev-parse HEAD`：`8cde626d2acf86e16c435b1a839c99b056ff4418`，讀回時間 2026-11-18T05:01Z。
+
+只用唯讀請求讀回：
+
+| 讀回 | 結果 |
+|---|---|
+| `curl -s https://drinkshop-new.andremusic.dev/floors.js`、`https://drinkshop.andremusic.dev/floors.js` | 200，與 `worker/src/floors.js` `cmp` 相同 |
+| `curl -s https://drinkshop-new.andremusic.dev/`、`https://drinkshop.andremusic.dev/` | 200，與 `app.html` `cmp` 相同 |
+| `curl -s https://drinkshop.andremusic.dev/api/structure` | rev 258、55 個 elements（deploy 前同為 rev 258，沒有寫入） |
+| `curl -s https://drinkshop-new.andremusic.dev/api/plans` | id `56535dee6d7a0102`、`6d635556d308c612`、`413c34c07d6f4988`、`0a53a59670a84df0`，不含 `structure` |
