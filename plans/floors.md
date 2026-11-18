@@ -1,5 +1,5 @@
 ---
-contract_commit: "3519f7df021dfd1ac1cabd14ee0d3cc2a349ec62"
+contract_commit: "568cd5251af18a50d0e8d289eef5e2a474b47a2d"
 ---
 
 # 2–4F 樓層 + 可編輯建築結構 + 神明桌限制 — 計畫
