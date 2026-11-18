@@ -59,7 +59,6 @@
   .fx.stairs{background:repeating-linear-gradient(90deg,var(--shell),var(--shell) 5px,var(--shellB) 5px,var(--shellB) 5.6px)}
   .fx.partition{background:var(--wall);border:1px solid var(--wall);color:var(--card);z-index:4}   /* 房間隔層：深色實心，跟舊的隔間牆設備同色 */
   .fx.walkway{background:repeating-linear-gradient(45deg,transparent,transparent 6px,var(--shellB) 6px,var(--shellB) 7px);border:1px dashed var(--sub);z-index:2}   /* 走道：空心斜線，設備壓到會紅框 */
-  .plan.structmode .fx.stairs{cursor:default;outline-style:dotted}   /* 樓梯固定不可拖 */
   .it{position:absolute;border:1.5px solid var(--counterB);background:var(--counter);border-radius:3px;cursor:grab;z-index:10;
     display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;
     touch-action:none;user-select:none;padding:1px;line-height:1.05}
@@ -178,9 +177,10 @@
       <label class="tgl" title="直向：門口在下、樓梯在右，跟原始 CAD 同向"><input type="checkbox" id="orientToggle" checked> 直向</label>
       <label class="tgl" title="四層左到右並排；手機上小，關掉只看目前樓層"><input type="checkbox" id="allFloors"> 四層並排</label>
       <label class="tgl"><input type="checkbox" id="projToggle" checked> 投影別層</label>
-      <label class="tgl" title="開著只能動梁／廁所／玄關／神明桌，設備鎖住；關著反過來"><input type="checkbox" id="structMode"> 🏗 編輯結構</label>
+      <label class="tgl" title="開著只能動梁／廁所／樓梯／玄關／神明桌，設備鎖住；關著反過來"><input type="checkbox" id="structMode"> 🏗 編輯結構</label>
       <button class="structbtn" id="addBeam">＋ 梁</button>
       <button class="structbtn" id="addBath">＋ 廁所</button>
+      <button class="structbtn" id="addStairs">＋ 樓梯</button>
       <button class="structbtn" id="addPartition" title="房子的隔間，全部方案共用；厚 10 cm">＋ 房間隔層</button>
       <button class="structbtn" id="addWalkway" title="樓梯前後要留的通道，全部方案共用；設備壓到會紅框">＋ 走道</button>
       <label class="tgl itembtn" title="開著：點一件加一件、再點取消；桌機也可以 Shift+點"><input type="checkbox" id="multiToggle"> 多選</label>
@@ -422,7 +422,7 @@ function renderFloor(f,pn,bad){
   elementsOn(elements,f).forEach(s=>{ const d=document.createElement('div'); d.className='fx '+(s.kind||'')+(selEl===s.id?' sel':'');
     place(d,s.x,s.y,s.w,s.d); d.innerHTML='<span>'+esc(elLabel(s))+'</span>'; d.dataset.eid=s.id;
     if(draggable.has(s)) d.addEventListener('pointerdown',startDragEl);
-    else if(mode()==='structure') d.addEventListener('pointerdown',selectOnlyEl);   // 樓梯：不可拖但可選（面板才能複製／搬／刪）
+    else if(mode()==='structure') d.addEventListener('pointerdown',selectOnlyEl);   // 保險：不在可拖集合但仍可選（面板才能複製／搬／刪）
     pn.appendChild(d);
     if(mode()==='structure'&&selEl===s.id) addHandles(d,s); });
   onFloor(items,f).forEach(it=>{ if(it.hidden)return;
@@ -595,10 +595,10 @@ function endStretch(){ if(!stretch)return; const h=stretch.h;
 function floorOpts(label){ return '<option value="">'+label+'…</option>'+FLOORS.map(f=>'<option value="'+f+'">'+f+'F</option>').join(''); }
 function bindFloorSelect(id,fn){ const el=$('#'+id); if(!el)return; el.onchange=()=>{ const f=+el.value; el.value=''; if(FLOORS.includes(f)) fn(f); }; }
 function updateSelEl(){ const s=elements.find(x=>x.id===selEl);
-  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／廁所／房間隔層／走道／玄關／神明桌來移動或改尺寸；隔層／走道／廁所選中後拖邊上的圓點可以只拉一邊；樓梯固定不可拖；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
+  if(!s){ $('#selBody').innerHTML='🏗 編輯結構中：點一個梁／廁所／樓梯／房間隔層／走道／玄關／神明桌來移動或改尺寸；隔層／走道／廁所選中後拖邊上的圓點可以只拉一邊；設備已鎖住'; $('#selBody').style.color='var(--sub)'; $('#selBtns').style.display='none'; return; }
   $('#selBody').style.color='var(--ink)'; $('#selBtns').style.display='none';
   const num=(id,v)=>'<input id="'+id+'" type="number" step="1" value="'+Math.round(v)+'" style="width:64px">';
-  $('#selBody').innerHTML='<div class="kv"><b>'+esc(KIND_LABEL[s.kind]||s.kind)+'</b> · '+floorOf(s)+'F'+(s.kind==='stairs'?' · <span style="color:var(--sub)">樓梯固定，不可拖</span>':'')+'</div>'+
+  $('#selBody').innerHTML='<div class="kv"><b>'+esc(KIND_LABEL[s.kind]||s.kind)+'</b> · '+floorOf(s)+'F</div>'+
     '<div class="kv">名稱 <input id="en" value="'+esc(s.name||'')+'" style="width:150px"></div>'+
     '<div class="kv">X '+num('ex',s.x)+' Y '+num('ey',s.y)+'</div>'+
     '<div class="kv">長 '+num('ew',s.w)+' 寬 '+num('ed',s.d)+' cm</div>'+
@@ -714,7 +714,7 @@ $('#structMode').onchange=(e)=>setStructMode(e.target.checked);
 $('#addBeam').onclick=()=>{ const w=Math.max(10,+prompt('梁寬(cm)：','30')||30); addElement('beam',PLAN_W,w); };
 $('#addBath').onclick=()=>addElement('bath',140,200);
 $('#addWalkway').onclick=()=>addElement('walkway',80,80);
-// 「＋ 樓梯」2026-09-17 拿掉：樓梯不會動了（結構模式也不可拖，見 draggableSet）；面板仍可打數字、刪、複製到別層
+$('#addStairs').onclick=()=>addElement('stairs',267,100);   // 凍結契約 D4：結構模式可加樓梯、可拖
 $('#addPartition').onclick=()=>{ const L=Math.max(20,+prompt('房間隔層長度(cm)：','200')||200); addElement('partition',L,10); };
 function flip(){ if(structMode||sel==null)return; const it=items.find(i=>i.id===sel); if(!it)return; it.flip=!it.flip; save(); render(); }
 $('#flip').onclick=flip;

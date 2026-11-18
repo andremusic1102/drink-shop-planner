@@ -73,8 +73,8 @@ export function isStructuralItem(it) {
  * 關著只有當層的一般設備能動——兩種東西永遠不會同時可拖（2026-09-17 定案：避免排設備時誤碰梁）。
  */
 export function draggableSet(mode, items, elements, floor) {
-  // 樓梯固定不動（2026-09-17 定案）：結構模式下也不可拖；面板仍可打數字、可刪、可複製到別層
-  if (mode === "structure") return elementsOn(elements, floor).filter((e) => e.kind !== "stairs").concat(cur(items, floor).filter(isStructuralItem));
+  // 凍結契約 D4：結構模式開著時「結構元件可選可拖」——樓梯也是結構元件，一樣可拖
+  if (mode === "structure") return elementsOn(elements, floor).concat(cur(items, floor).filter(isStructuralItem));
   return cur(items, floor).filter((it) => !isStructuralItem(it));
 }
 

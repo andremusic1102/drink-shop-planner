@@ -125,10 +125,11 @@ test("門窗在框外不算暫放", () => {
   assert.equal(isParked({ x: -200, y: 0, w: 120, d: 16 }), true, "同座標的一般設備才算暫放");
 });
 
-test("結構模式：樓梯不在可拖集合", () => {
+test("結構模式開著：樓梯在可拖集合", () => {
   const els = [...elements, { id: "stairs-1", kind: "stairs", floor: 1, name: "樓梯", x: 858, y: 0, w: 267, d: 100 }];
-  assert.deepEqual(draggableSet("structure", items, els, 1).filter((e) => e.kind).map((e) => e.id), ["bath-1"], "廁所可拖、樓梯不可");
-  assert.deepEqual(elementsOn(els, 1).map((e) => e.id), ["bath-1", "stairs-1"], "但樓梯還是當層的結構元件（會畫、可選）");
+  assert.deepEqual(draggableSet("structure", items, els, 1).filter((e) => e.kind).map((e) => e.id), ["bath-1", "stairs-1"], "廁所與樓梯都可拖");
+  assert.ok(!draggableSet("items", items, els, 1).some((e) => e.kind === "stairs"), "設備模式下樓梯鎖住");
+  assert.ok(!draggableSet("structure", items, els, 2).some((e) => e.id === "stairs-1"), "別層的樓梯不在可拖集合");
 });
 
 test("跨層複製：新 id、floor 改、x/y 不變", () => {
