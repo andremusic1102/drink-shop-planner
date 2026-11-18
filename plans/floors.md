@@ -67,7 +67,9 @@ structure = { elements:[ {id, kind:'beam'|'stairs'|'bath'|'entry', floor, name, 
 
 - [ ] D6: 上線＋readback
   `cd worker && npm run deploy`（兩個 hostname 同一個 Worker），deploy 前先本機 miniflare 開舊方案確認不壞。deploy 後在 `drinkshop-new.andremusic.dev` 開一份舊方案、切樓層、開結構模式加一根梁、存、重載。
-  Completion criterion: `docs/d6-readback.md` 記錄 `curl -s https://drinkshop-new.andremusic.dev/api/structure` 的原文回傳（含 `rev` 與 `elements` 陣列）、`curl -s https://drinkshop-new.andremusic.dev/api/plans` 的 id 清單不含 `structure`、以及 `git rev-parse HEAD`；vault `50_Projects/106號一樓 飲料店改裝.md` 補「梁／樓上廁所在編輯器結構模式輸入」一行（用 Read／Write，不經 Bash）。
+  Completion criterion: 唯讀 `curl -s -o /dev/null -w '%{http_code}'` 對 `https://drinkshop.andremusic.dev/` 與 `https://drinkshop-new.andremusic.dev/` 都回 200，且兩者首頁內容的 SHA-256 相同；`curl -s https://drinkshop.andremusic.dev/api/structure` 回 JSON 含數字 `rev` 與 `elements` 陣列；`curl -s https://drinkshop-new.andremusic.dev/api/plans` 回的 id 清單不含 `structure`；`docs/d6-readback.md` 記有 deploy 紀錄（`Current Version ID` 與 deploy 時的 `git rev-parse HEAD`）、上述 structure／plans 的讀回、兩個 hostname 首頁的讀回，以及在正式站加梁、存檔、重載後 `/api/structure` 的讀回紀錄。
+
+vault 筆記補「梁／樓上廁所在編輯器結構模式輸入」那一行、以及正式站畫面（ego-browser）核對，這兩件由 Andre 或主對話另外驗，不進 codex 契約。
 
 ## 不做
 
