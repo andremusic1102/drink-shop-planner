@@ -31,8 +31,10 @@ database_id = "e69306ae-0bad-4c19-971b-0e7c1fd944eb"
 # 每日摘要：21:00 America/Chicago。Cron 只吃 UTC，而 21:00 當地夏令是
 # 02:00 UTC、冬令是 03:00 UTC —— 兩個都排，程式裡再判斷當地是不是 21 點。
 # 這樣日光節約時間換來換去都不用改設定。
+# 2026-11-21：兩條合成一條 `0 2,3 * * *`（同樣在 02:00 與 03:00 UTC 觸發，行為不變），
+# 騰出個人帳號一個 cron 名額給 freebie-tracker 的 keepalive（免費方案上限 5 條）。
 [triggers]
-crons = ["0 2 * * *", "0 3 * * *"]
+crons = ["0 2,3 * * *"]
 
 [[send_email]]
 name = "DIGEST"
